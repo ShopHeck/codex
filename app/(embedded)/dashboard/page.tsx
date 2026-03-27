@@ -43,7 +43,16 @@ export default async function DashboardPage() {
     .sort((a, b) => a.netProfit - b.netProfit)
     .slice(0, 5);
 
-  const revenueVsProfitMax = Math.max(data.kpis.revenue, Math.max(data.kpis.netProfit, 0), 1);
+  const revenueVsProfitRows = [
+    { label: "Revenue", value: data.kpis.revenue, displayValue: data.kpis.revenue, color: "bg-slate-700" },
+    {
+      label: data.kpis.netProfit < 0 ? "Net Loss" : "Net Profit",
+      value: Math.abs(data.kpis.netProfit),
+      displayValue: data.kpis.netProfit,
+      color: data.kpis.netProfit < 0 ? "bg-red-600" : "bg-emerald-600"
+    }
+  ];
+  const revenueVsProfitMax = Math.max(...revenueVsProfitRows.map((row) => row.value), 1);
 
   const waterfallRows = [
     { label: "Revenue", value: data.kpis.revenue, type: "positive" as const },
@@ -108,16 +117,16 @@ export default async function DashboardPage() {
         <Card className="space-y-4 p-4">
           <h2 className="font-medium">Revenue vs Net Profit</h2>
           <div className="grid grid-cols-2 gap-4">
-            {[
-              { label: "Revenue", value: data.kpis.revenue, color: "bg-slate-700" },
-              { label: "Net Profit", value: data.kpis.netProfit, color: "bg-emerald-600" }
-            ].map((row) => (
+            {revenueVsProfitRows.map((row) => (
               <div key={row.label}>
                 <div className="mb-2 h-44 rounded bg-slate-100 p-3">
-                  <div className={`h-full rounded ${row.color}`} style={{ width: `${Math.max((Math.max(row.value, 0) / revenueVsProfitMax) * 100, 4)}%` }} />
+                  <div
+                    className={`h-full rounded ${row.color}`}
+                    style={{ width: row.value > 0 ? `${Math.max((row.value / revenueVsProfitMax) * 100, 4)}%` : "0%" }}
+                  />
                 </div>
                 <p className="text-sm text-muted-foreground">{row.label}</p>
-                <p className="font-medium">{formatCurrency(row.value)}</p>
+                <p className="font-medium">{formatCurrency(row.displayValue)}</p>
               </div>
             ))}
           </div>
@@ -130,15 +139,20 @@ export default async function DashboardPage() {
               <div key={row.label}>
                 <div className="mb-1 flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">{row.label}</span>
-                  <span className={row.type === "negative" ? "text-red-600" : "text-foreground"}>
-                    {row.type === "negative" ? "-" : ""}
-                    {formatCurrency(Math.abs(row.value))}
+                  <span className={row.type === "negative" || row.value < 0 ? "text-red-600" : "text-foreground"}>
+                    {formatCurrency(row.type === "negative" ? -Math.abs(row.value) : row.value)}
                   </span>
                 </div>
                 <div className="h-2 rounded bg-slate-100">
                   <div
                     className={`h-full rounded ${
-                      row.type === "negative" ? "bg-red-500" : row.type === "total" ? "bg-emerald-600" : "bg-slate-700"
+                      row.type === "negative"
+                        ? "bg-red-500"
+                        : row.type === "total"
+                          ? row.value < 0
+                            ? "bg-red-600"
+                            : "bg-emerald-600"
+                          : "bg-slate-700"
                     }`}
                     style={{ width: `${Math.max((Math.abs(row.value) / waterfallScale) * 100, 2)}%` }}
                   />
