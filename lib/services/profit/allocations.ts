@@ -16,8 +16,11 @@ export function allocateRefunds(inputs: ProfitInputs) {
   const perItemAmount = new Map<string, number>();
   const perItemQty = new Map<string, number>();
   let unassignedAmount = 0;
+  let mappedTotal = 0;
 
   for (const refund of inputs.refundRecords) {
+    mappedTotal += refund.amount;
+
     if (refund.orderItemId) {
       perItemAmount.set(refund.orderItemId, (perItemAmount.get(refund.orderItemId) ?? 0) + refund.amount);
       perItemQty.set(refund.orderItemId, (perItemQty.get(refund.orderItemId) ?? 0) + refund.refundedQuantity);
@@ -26,8 +29,11 @@ export function allocateRefunds(inputs: ProfitInputs) {
     }
   }
 
+  const fallbackUnmappedRefund = Math.max(inputs.refunds - mappedTotal, 0);
+  const totalUnassignedRefund = unassignedAmount + fallbackUnmappedRefund;
+
   const revenueWeights = inputs.items.map((item) => item.totalRevenue);
-  const unassignedDistribution = allocateProportionally(unassignedAmount, revenueWeights);
+  const unassignedDistribution = allocateProportionally(totalUnassignedRefund, revenueWeights);
 
   return inputs.items.map((item, index) => ({
     refundAllocated: (perItemAmount.get(item.id) ?? 0) + unassignedDistribution[index],

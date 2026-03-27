@@ -160,6 +160,8 @@ export function computeContributionProfit(inputs: ProfitInputs): ProfitComputati
   const totalCosts = inputs.revenue - contributionProfit;
   const margin = inputs.revenue > 0 ? contributionProfit / inputs.revenue : 0;
 
+  const refundRecordsTotal = sum(inputs.refundRecords.map((refund) => refund.amount));
+
   const confidenceInputs: ConfidenceInputs = {
     missingUnitCost: inputs.items.some((item) => item.cogsPerUnit <= 0),
     estimatedShippingUsed: shippingResolution.estimatedShippingUsed,
@@ -167,7 +169,9 @@ export function computeContributionProfit(inputs: ProfitInputs): ProfitComputati
     missingFeeRule: feeResolution.missingFeeRule,
     incompleteRefundMapping:
       inputs.refunds > 0 &&
-      inputs.refundRecords.some((refund) => refund.orderItemId == null || refund.refundedQuantity <= 0)
+      (inputs.refundRecords.length === 0 ||
+        refundRecordsTotal < inputs.refunds ||
+        inputs.refundRecords.some((refund) => refund.orderItemId == null || refund.refundedQuantity <= 0))
   };
 
   const confidenceScore = computeConfidence(confidenceInputs);

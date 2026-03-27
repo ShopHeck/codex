@@ -77,6 +77,21 @@ describe("profit engine", () => {
     expect(average.shippingCost).toBe(7);
   });
 
+
+  it("falls back to order-level refunds when refund rows are missing", () => {
+    const result = computeContributionProfit(baseInputs({ refunds: 30, refundRecords: [] }));
+
+    expect(result.allocations[0].refundAllocated).toBeCloseTo(20);
+    expect(result.allocations[1].refundAllocated).toBeCloseTo(10);
+  });
+
+  it("penalizes confidence when refunds exist but no refund rows are mapped", () => {
+    const result = computeContributionProfit(baseInputs({ refunds: 10, refundRecords: [] }));
+
+    expect(result.confidenceInputs.incompleteRefundMapping).toBe(true);
+    expect(result.confidenceScore).toBe(90);
+  });
+
   it("supports ad allocation modes none, revenue-weighted, channel-weighted", () => {
     const none = computeContributionProfit(baseInputs({ attributionMode: "none" }));
     expect(none.adSpendAllocation).toBe(0);
