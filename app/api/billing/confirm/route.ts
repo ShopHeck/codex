@@ -25,7 +25,7 @@ function errorResponse(req: NextRequest, message: string, status: number) {
 
 export async function GET(req: NextRequest) {
   const storeId = req.nextUrl.searchParams.get("storeId");
-  const chargeId = req.nextUrl.searchParams.get("charge_id");
+  const chargeId = req.nextUrl.searchParams.get("charge_id")?.trim() ?? null;
   const manage = req.nextUrl.searchParams.get("manage");
   const shop = req.nextUrl.searchParams.get("shop");
 
@@ -39,22 +39,17 @@ export async function GET(req: NextRequest) {
   }
 
   const session = await getSessionFromCookies();
-  if (session) {
-    if (session.storeId !== storeId) {
-      return errorResponse(req, "Invalid billing callback: store mismatch.", 403);
-    }
-
-    if (shop && normalizeShop(session.shop) !== normalizeShop(shop)) {
-      return errorResponse(req, "Invalid billing callback: shop mismatch.", 403);
-    }
-  }
 
   if (shop && normalizeShop(store.shopDomain) !== normalizeShop(shop)) {
     return errorResponse(req, "Invalid billing callback: does not belong to this store.", 400);
   }
 
   if (manage) {
-    if (!session) {
+    if (
+      !session ||
+      session.storeId !== storeId ||
+      (shop && normalizeShop(session.shop) !== normalizeShop(shop))
+    ) {
       return errorResponse(req, "Unauthorized billing manage request.", 401);
     }
 
@@ -66,7 +61,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Missing billing callback params" }, { status: 400 });
   }
 
-  const confirmation = await confirmLatestPendingBilling(storeId);
+  const confirmation = await confirmLatestPendingBilling(storeId, chargeId);
 
   if (confirmation.outcome === "activated" || confirmation.outcome === "already_processed") {
     return NextResponse.redirect(new URL("/dashboard", req.url));

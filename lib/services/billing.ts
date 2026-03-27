@@ -108,16 +108,56 @@ export async function ensureBilling(storeId: string, manage = false) {
   return { active: false, confirmationUrl: data.appSubscriptionCreate.confirmationUrl };
 }
 
-export async function confirmLatestPendingBilling(storeId: string) {
+function buildShopifySubscriptionGidCandidates(chargeId: string) {
+  const trimmedChargeId = chargeId.trim();
+  if (!trimmedChargeId) return [];
+
+  const candidates = new Set<string>([trimmedChargeId]);
+  if (!trimmedChargeId.startsWith("gid://")) {
+    candidates.add(`gid://shopify/AppSubscription/${trimmedChargeId}`);
+  }
+
+  return Array.from(candidates);
+}
+
+export async function confirmLatestPendingBilling(storeId: string, chargeId: string) {
   const store = await prisma.shopifyStore.findUnique({ where: { id: storeId } });
   if (!store) throw new Error("Store not found");
 
+  const normalizedChargeId = chargeId.trim();
+  const gidCandidates = buildShopifySubscriptionGidCandidates(normalizedChargeId);
   const pending = await prisma.billingSubscription.findFirst({
-    where: { storeId, status: BillingStatus.PENDING },
+    where: {
+      storeId,
+      status: BillingStatus.PENDING,
+      OR: [
+        { shopifySubscriptionGid: { in: gidCandidates } },
+        { shopifySubscriptionGid: { endsWith: `/${normalizedChargeId}` } }
+      ]
+    },
     orderBy: { createdAt: "desc" }
   });
 
   if (!pending) {
+    const matchedHistorical = await prisma.billingSubscription.findFirst({
+      where: {
+        storeId,
+        OR: [
+          { shopifySubscriptionGid: { in: gidCandidates } },
+          { shopifySubscriptionGid: { endsWith: `/${normalizedChargeId}` } }
+        ]
+      },
+      orderBy: { createdAt: "desc" }
+    });
+
+    if (matchedHistorical) {
+      return {
+        outcome: "already_processed" as const,
+        status: matchedHistorical.status,
+        transitionedAt: matchedHistorical.updatedAt
+      };
+    }
+
     const latest = await prisma.billingSubscription.findFirst({
       where: { storeId },
       orderBy: { createdAt: "desc" }
