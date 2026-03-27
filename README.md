@@ -17,6 +17,21 @@ Important rules:
 - Missing data must reduce confidence scores
 - No recommendation may be shown without dollar impact
 
+## Local Setup
+
+Install dependencies:
+npm install
+
+Run dev:
+npm run dev
+
+Run lint:
+npm run lint
+
+If lint fails due to Next.js not being available:
+- ensure dependencies are installed
+- or use: npm run lint:basic
+
 ## Product & architecture summary
 
 ### Personas
