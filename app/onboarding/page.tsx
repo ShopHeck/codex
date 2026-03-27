@@ -10,7 +10,12 @@ type FirstRevealData = {
     netProfit: number;
     revenueProfitGap: number;
   };
-  products: Array<{
+  topProfitableProducts: Array<{
+    productId: string;
+    productTitle: string;
+    netProfit: number;
+  }>;
+  topDestroyingProducts: Array<{
     productId: string;
     productTitle: string;
     netProfit: number;
@@ -55,6 +60,10 @@ export default function OnboardingPage() {
     setIsCompleting(true);
     try {
       const response = await fetch("/api/onboarding", { method: "POST" });
+      if (response.status === 401) {
+        window.location.href = "/install";
+        return;
+      }
       if (!response.ok) {
         throw new Error("We could not complete setup. Please try again.");
       }
@@ -68,11 +77,8 @@ export default function OnboardingPage() {
     }
   }
 
-  const topProfitable = revealData?.products.filter((product) => product.netProfit > 0).slice(0, 3) ?? [];
-  const topDestroying = revealData?.products
-    .filter((product) => product.netProfit < 0)
-    .sort((a, b) => a.netProfit - b.netProfit)
-    .slice(0, 3) ?? [];
+  const topProfitable = revealData?.topProfitableProducts ?? [];
+  const topDestroying = revealData?.topDestroyingProducts ?? [];
 
   return (
     <main className="p-6">
