@@ -13,6 +13,7 @@ export async function GET() {
     confidence: insights.confidence,
     daily: insights.daily,
     costBreakdown: insights.leaks.map((leak) => ({ label: leak.label, value: leak.value })),
-    recommendations: insights.recommendations.slice(0, 3)
+    recommendations: insights.recommendations.slice(0, 3),
+    products: insights.products
   });
 }
