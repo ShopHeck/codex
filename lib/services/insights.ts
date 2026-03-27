@@ -20,6 +20,13 @@ type OrderWithItems = {
     cogsPerUnit: number;
     totalRevenue: number;
     totalCogs: number;
+    discountAllocated: number;
+    refundAllocated: number;
+    shippingAllocated: number;
+    adSpendAllocated: number;
+    variableCostAllocated: number;
+    feeAllocated: number;
+    netProfit: number;
   }>;
 };
 
@@ -27,10 +34,18 @@ export type ProductInsight = {
   productId: string;
   productTitle: string;
   revenue: number;
-  totalCosts: number;
   netProfit: number;
   margin: number;
+  refundRate: number;
+  shippingBurden: number;
+  adAdjustedMargin: number;
   status: "Scale" | "Healthy" | "Needs Fix" | "Cut Candidate";
+};
+
+type ProductAccumulator = ProductInsight & {
+  refundAllocated: number;
+  shippingAllocated: number;
+  adSpendAllocated: number;
 };
 
 export type Recommendation = {
@@ -48,9 +63,13 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
-export function getProductStatus(margin: number): ProductInsight["status"] {
+export function getProductStatus(
+  margin: number,
+  refundRate = 0,
+  shippingBurden = 0
+): ProductInsight["status"] {
   if (margin <= 0) return "Cut Candidate";
-  if (margin < 0.12) return "Needs Fix";
+  if (margin < 0.12 || refundRate >= 0.08 || shippingBurden >= 0.15) return "Needs Fix";
   if (margin >= 0.25) return "Scale";
   return "Healthy";
 }
@@ -111,36 +130,44 @@ export async function getStoreInsights(storeId: string) {
           ? "Usable but incomplete"
           : "Low confidence";
 
-  const productMap = new Map<string, ProductInsight>();
+  const productMap = new Map<string, ProductAccumulator>();
   for (const order of typedOrders) {
-    const totalItemRevenue = order.items.reduce((sum, item) => sum + item.totalRevenue, 0);
-    const allocatableNonCogsCosts = Math.max(order.totalCosts - order.cogs, 0);
-
     for (const item of order.items) {
       const key = item.productId ?? item.title;
       const existing = productMap.get(key) ?? {
         productId: key,
         productTitle: item.title,
         revenue: 0,
-        totalCosts: 0,
         netProfit: 0,
         margin: 0,
-        status: "Healthy"
+        refundRate: 0,
+        shippingBurden: 0,
+        adAdjustedMargin: 0,
+        status: "Healthy",
+        refundAllocated: 0,
+        shippingAllocated: 0,
+        adSpendAllocated: 0
       };
 
-      const share = totalItemRevenue > 0 ? item.totalRevenue / totalItemRevenue : 0;
-      const allocatedCosts = item.totalCogs + allocatableNonCogsCosts * share;
-
       existing.revenue += item.totalRevenue;
-      existing.totalCosts += allocatedCosts;
-      existing.netProfit = existing.revenue - existing.totalCosts;
+      existing.netProfit += item.netProfit;
+      existing.refundAllocated += item.refundAllocated;
+      existing.shippingAllocated += item.shippingAllocated;
+      existing.adSpendAllocated += item.adSpendAllocated;
+
       existing.margin = existing.revenue > 0 ? existing.netProfit / existing.revenue : 0;
-      existing.status = getProductStatus(existing.margin);
+      existing.refundRate = existing.revenue > 0 ? existing.refundAllocated / existing.revenue : 0;
+      existing.shippingBurden = existing.revenue > 0 ? existing.shippingAllocated / existing.revenue : 0;
+      existing.adAdjustedMargin =
+        existing.revenue > 0 ? (existing.netProfit + existing.adSpendAllocated) / existing.revenue : 0;
+      existing.status = getProductStatus(existing.margin, existing.refundRate, existing.shippingBurden);
       productMap.set(key, existing);
     }
   }
 
-  const products = Array.from(productMap.values()).sort((a, b) => b.netProfit - a.netProfit);
+  const products: ProductInsight[] = Array.from(productMap.values())
+    .map(({ refundAllocated: _refundAllocated, shippingAllocated: _shippingAllocated, adSpendAllocated: _adSpendAllocated, ...product }) => product)
+    .sort((a, b) => b.netProfit - a.netProfit);
 
   const leakRows = [
     { label: "Refund Leak", value: typedOrders.reduce((sum, order) => sum + order.refunds, 0) },
