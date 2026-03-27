@@ -10,7 +10,7 @@ export async function recomputeOrderProfit(orderId: string) {
   });
   if (!order) return;
 
-  const cogs = order.items.reduce((sum, i) => sum + i.totalCogs, 0);
+  const cogs = (order.items as Array<{ totalCogs: number }>).reduce((sum: number, item: { totalCogs: number }) => sum + item.totalCogs, 0);
   const paymentFees = order.revenue * (order.store.paymentFeePercent / 100);
   const shopifyFees = order.revenue * (order.store.shopifyFeePercent / 100);
   const shippingCost = order.shippingCost || order.store.defaultShippingCost;
@@ -22,7 +22,15 @@ export async function recomputeOrderProfit(orderId: string) {
   });
   const appCostAllocation = (monthlyExpenses._sum.amount ?? 0) / 30;
 
-  const totalCosts = cogs + paymentFees + shopifyFees + shippingCost + adSpendAllocation + appCostAllocation + order.refunds + order.otherCosts;
+  const totalCosts =
+    cogs +
+    paymentFees +
+    shopifyFees +
+    shippingCost +
+    adSpendAllocation +
+    appCostAllocation +
+    order.refunds +
+    order.otherCosts;
   const netProfit = order.revenue - totalCosts;
   const margin = order.revenue > 0 ? netProfit / order.revenue : 0;
 
@@ -36,21 +44,28 @@ export async function rebuildSnapshots(storeId: string) {
   const orders = await prisma.order.findMany({ where: { storeId } });
   const byDate = new Map<string, { revenue: number; totalCosts: number; netProfit: number }>();
 
-  for (const o of orders) {
-    const date = o.orderDate.toISOString().slice(0, 10);
+  for (const order of orders) {
+    const date = order.orderDate.toISOString().slice(0, 10);
     const entry = byDate.get(date) ?? { revenue: 0, totalCosts: 0, netProfit: 0 };
-    entry.revenue += o.revenue;
-    entry.totalCosts += o.totalCosts;
-    entry.netProfit += o.netProfit;
+    entry.revenue += order.revenue;
+    entry.totalCosts += order.totalCosts;
+    entry.netProfit += order.netProfit;
     byDate.set(date, entry);
   }
 
-  for (const [date, v] of byDate.entries()) {
-    const margin = v.revenue > 0 ? v.netProfit / v.revenue : 0;
+  for (const [date, values] of byDate.entries()) {
+    const margin = values.revenue > 0 ? values.netProfit / values.revenue : 0;
     await prisma.dailyProfitSnapshot.upsert({
       where: { storeId_date: { storeId, date: new Date(date) } },
-      update: { revenue: v.revenue, totalCosts: v.totalCosts, netProfit: v.netProfit, margin },
-      create: { storeId, date: new Date(date), revenue: v.revenue, totalCosts: v.totalCosts, netProfit: v.netProfit, margin }
+      update: { revenue: values.revenue, totalCosts: values.totalCosts, netProfit: values.netProfit, margin },
+      create: {
+        storeId,
+        date: new Date(date),
+        revenue: values.revenue,
+        totalCosts: values.totalCosts,
+        netProfit: values.netProfit,
+        margin
+      }
     });
   }
 }

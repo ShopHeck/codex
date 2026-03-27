@@ -19,7 +19,7 @@ export async function ensureBilling(storeId: string, manage = false) {
   });
   if (!store) throw new Error("Store not found");
 
-  const active = store.billingSubscriptions.find((s) => s.status === BillingStatus.ACTIVE);
+  const active = store.billingSubscriptions.find((subscription: { status: BillingStatus }) => subscription.status === BillingStatus.ACTIVE);
   if (active && !manage) return { active: true };
 
   const plan = await prisma.billingPlan.upsert({
@@ -36,28 +36,23 @@ export async function ensureBilling(storeId: string, manage = false) {
       appSubscription: { id: string; status: string };
       userErrors: Array<{ message: string }>;
     };
-  }>(
-    store.shopDomain,
-    store.accessToken,
-    CREATE_SUBSCRIPTION,
-    {
-      name: config.billing.starter.name,
-      returnUrl,
-      lineItems: [
-        {
-          plan: {
-            appRecurringPricingDetails: {
-              price: {
-                amount: config.billing.starter.lineItem.amount,
-                currencyCode: config.billing.starter.lineItem.currencyCode
-              },
-              interval: config.billing.starter.lineItem.interval
-            }
+  }>(store.shopDomain, store.accessToken, CREATE_SUBSCRIPTION, {
+    name: config.billing.starter.name,
+    returnUrl,
+    lineItems: [
+      {
+        plan: {
+          appRecurringPricingDetails: {
+            price: {
+              amount: config.billing.starter.lineItem.amount,
+              currencyCode: config.billing.starter.lineItem.currencyCode
+            },
+            interval: config.billing.starter.lineItem.interval
           }
         }
-      ]
-    }
-  );
+      }
+    ]
+  });
 
   if (data.appSubscriptionCreate.userErrors.length) {
     throw new Error(data.appSubscriptionCreate.userErrors[0].message);
@@ -76,9 +71,9 @@ export async function ensureBilling(storeId: string, manage = false) {
   return { active: false, confirmationUrl: data.appSubscriptionCreate.confirmationUrl };
 }
 
-export async function activateBilling(storeId: string, subscriptionGid: string) {
+export async function activateLatestPendingBilling(storeId: string) {
   await prisma.billingSubscription.updateMany({
-    where: { storeId, shopifySubscriptionGid: subscriptionGid },
+    where: { storeId, status: BillingStatus.PENDING },
     data: { status: BillingStatus.ACTIVE }
   });
 }

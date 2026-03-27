@@ -1,14 +1,17 @@
+import { redirect } from "next/navigation";
 import { Card } from "@/components/ui/card";
-
-async function getOrders() {
-  const res = await fetch(`${process.env.APP_URL}/api/orders`, { cache: "no-store" });
-  if (!res.ok) return [];
-  const data = await res.json();
-  return data.orders;
-}
+import { prisma } from "@/lib/prisma";
+import { getSessionFromCookies } from "@/lib/shopify/session";
 
 export default async function OrdersPage() {
-  const orders = await getOrders();
+  const session = await getSessionFromCookies();
+  if (!session) redirect("/install");
+
+  const orders = await prisma.order.findMany({
+    where: { storeId: session.storeId },
+    orderBy: { orderDate: "desc" },
+    take: 100
+  });
 
   return (
     <div className="space-y-4">
@@ -25,7 +28,7 @@ export default async function OrdersPage() {
             </tr>
           </thead>
           <tbody>
-            {orders.map((o: any) => (
+            {orders.map((o) => (
               <tr key={o.id} className="border-t">
                 <td className="p-2">{o.orderNumber}</td>
                 <td className="p-2">{new Date(o.orderDate).toLocaleDateString()}</td>

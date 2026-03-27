@@ -10,6 +10,11 @@ export async function GET(req: NextRequest) {
   const authUrl = buildAuthUrl(normalized, state);
 
   const res = NextResponse.redirect(authUrl);
-  res.cookies.set("oauth_state", state, { httpOnly: true, sameSite: "lax", secure: true, path: "/" });
+  res.cookies.set("oauth_state", state, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/"
+  });
   return res;
 }

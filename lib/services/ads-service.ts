@@ -8,10 +8,10 @@ export class ManualAdsService implements AdsService {
     const nextDay = new Date(date);
     nextDay.setDate(nextDay.getDate() + 1);
 
-    const entries = await prisma.adSpendEntry.findMany({
+    const entries = (await prisma.adSpendEntry.findMany({
       where: { storeId, date: { gte: date, lt: nextDay } }
-    });
+    })) as Array<{ amount: number }>;
 
-    return entries.reduce((sum, e) => sum + e.amount, 0);
+    return entries.reduce((sum: number, entry: { amount: number }) => sum + entry.amount, 0);
   }
 }

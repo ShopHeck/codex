@@ -29,6 +29,11 @@ export async function GET(req: NextRequest) {
 
   const session = signSession({ shop: normalizedShop, storeId: store.id });
   const res = NextResponse.redirect(new URL("/api/billing/status", req.url));
-  res.cookies.set("rp_session", session, { httpOnly: true, sameSite: "lax", secure: true, path: "/" });
+  res.cookies.set("rp_session", session, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/"
+  });
   return res;
 }

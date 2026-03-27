@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 
 const nav = [
@@ -7,7 +8,7 @@ const nav = [
   { href: "/settings", label: "Settings" }
 ];
 
-export function EmbeddedShell({ children }: { children: React.ReactNode }) {
+export function EmbeddedShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="border-b bg-white px-6 py-3 font-semibold">Real Profit for Shopify</header>

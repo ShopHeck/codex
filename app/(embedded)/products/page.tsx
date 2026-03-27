@@ -1,14 +1,31 @@
+import { redirect } from "next/navigation";
 import { Card } from "@/components/ui/card";
-
-async function getProducts() {
-  const res = await fetch(`${process.env.APP_URL}/api/products`, { cache: "no-store" });
-  if (!res.ok) return [];
-  const data = await res.json();
-  return data.products;
-}
+import { prisma } from "@/lib/prisma";
+import { getSessionFromCookies } from "@/lib/shopify/session";
 
 export default async function ProductsPage() {
-  const products = await getProducts();
+  const session = await getSessionFromCookies();
+  if (!session) redirect("/install");
+
+  const rows = await prisma.orderItem.groupBy({
+    by: ["productId", "title"],
+    where: { order: { storeId: session.storeId } },
+    _sum: { totalRevenue: true, totalCogs: true }
+  });
+
+  const products = rows.map((r) => {
+    const revenue = r._sum.totalRevenue ?? 0;
+    const totalCosts = r._sum.totalCogs ?? 0;
+    const netProfit = revenue - totalCosts;
+    return {
+      productId: r.productId ?? r.title,
+      productTitle: r.title,
+      revenue,
+      totalCosts,
+      netProfit,
+      margin: revenue ? netProfit / revenue : 0
+    };
+  });
 
   return (
     <div className="space-y-4">
@@ -25,7 +42,7 @@ export default async function ProductsPage() {
             </tr>
           </thead>
           <tbody>
-            {products.map((p: any) => (
+            {products.map((p) => (
               <tr key={p.productId} className="border-t">
                 <td className="p-2">{p.productTitle}</td>
                 <td className="p-2 text-right">${p.revenue.toFixed(2)}</td>

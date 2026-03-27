@@ -30,5 +30,10 @@ export async function getSessionFromCookies(): Promise<SessionPayload | null> {
 
 export async function setSessionCookie(token: string) {
   const cookieStore = await cookies();
-  cookieStore.set(COOKIE_NAME, token, { httpOnly: true, sameSite: "lax", secure: true, path: "/" });
+  cookieStore.set(COOKIE_NAME, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/"
+  });
 }
