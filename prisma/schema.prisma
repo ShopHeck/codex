@@ -138,7 +138,7 @@ model Order {
   updatedAt               DateTime    @updatedAt
   store                   ShopifyStore @relation(fields: [storeId], references: [id])
   items                   OrderItem[]
-  refunds                 Refund[]
+  refundRecords           Refund[]
   shippingCosts           ShippingCost[]
   fees                    Fee[]
   attribution             OrderAttribution?
