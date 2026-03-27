@@ -59,6 +59,26 @@ export type Recommendation = {
   actionCta: string;
 };
 
+export type LeakInsight = {
+  key: "refund" | "shipping" | "discount" | "fee" | "ad";
+  label: "Refund Leak" | "Shipping Leak" | "Discount Leak" | "Fee Leak" | "Ad Leak";
+  amount: number;
+  percentOfRevenue: number;
+  issueSummary: string;
+  impactEstimate: number;
+  // Backward-compatible aliases.
+  value: number;
+  ratio: number;
+};
+
+const LEAK_DEFAULT_THRESHOLDS: Record<LeakInsight["key"], number> = {
+  refund: 0.08,
+  shipping: 0.15,
+  discount: 0.2,
+  fee: 0.06,
+  ad: 0.12
+};
+
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
@@ -79,6 +99,38 @@ function getMonthlyFactor(orders: OrderWithItems[]) {
   const timestamps = orders.map((order) => order.orderDate.getTime());
   const rangeDays = Math.max(1, Math.ceil((Math.max(...timestamps) - Math.min(...timestamps)) / 86400000) + 1);
   return 30 / rangeDays;
+}
+
+function buildLeakInsight(
+  key: LeakInsight["key"],
+  label: LeakInsight["label"],
+  amount: number,
+  revenue: number,
+  monthlyFactor: number
+): LeakInsight {
+  const percentOfRevenue = revenue > 0 ? amount / revenue : 0;
+  const threshold = LEAK_DEFAULT_THRESHOLDS[key];
+
+  let issueSummary = `${label} is within the expected range.`;
+  if (percentOfRevenue >= threshold) {
+    issueSummary = `${label} exceeds the ${(threshold * 100).toFixed(0)}% threshold and is compressing contribution profit.`;
+  } else if (percentOfRevenue >= threshold * 0.75) {
+    issueSummary = `${label} is near the ${(threshold * 100).toFixed(0)}% threshold and should be monitored.`;
+  }
+
+  const excessPercent = Math.max(percentOfRevenue - threshold, 0);
+  const impactEstimate = revenue * excessPercent * monthlyFactor;
+
+  return {
+    key,
+    label,
+    amount,
+    percentOfRevenue,
+    issueSummary,
+    impactEstimate,
+    value: amount,
+    ratio: percentOfRevenue
+  };
 }
 
 export async function getStoreInsights(storeId: string) {
@@ -166,21 +218,45 @@ export async function getStoreInsights(storeId: string) {
   }
 
   const products: ProductInsight[] = Array.from(productMap.values())
-    .map(({ refundAllocated: _refundAllocated, shippingAllocated: _shippingAllocated, adSpendAllocated: _adSpendAllocated, ...product }) => product)
+    .map(
+      ({ refundAllocated: _refundAllocated, shippingAllocated: _shippingAllocated, adSpendAllocated: _adSpendAllocated, ...product }) =>
+        product
+    )
     .sort((a, b) => b.netProfit - a.netProfit);
 
-  const leakRows = [
-    { label: "Refund Leak", value: typedOrders.reduce((sum, order) => sum + order.refunds, 0) },
-    { label: "Shipping Leak", value: typedOrders.reduce((sum, order) => sum + order.shippingCost, 0) },
-    { label: "Discount Leak", value: typedOrders.reduce((sum, order) => sum + order.discounts, 0) },
-    {
-      label: "Fee Leak",
-      value: typedOrders.reduce((sum, order) => sum + order.paymentFees + order.shopifyFees, 0)
-    },
-    { label: "Ad Leak", value: typedOrders.reduce((sum, order) => sum + order.adSpendAllocation, 0) }
-  ].map((row) => ({ ...row, ratio: revenue > 0 ? row.value / revenue : 0 }));
-
   const monthlyFactor = getMonthlyFactor(typedOrders);
+  const leaks: LeakInsight[] = [
+    buildLeakInsight("refund", "Refund Leak", typedOrders.reduce((sum, order) => sum + order.refunds, 0), revenue, monthlyFactor),
+    buildLeakInsight(
+      "shipping",
+      "Shipping Leak",
+      typedOrders.reduce((sum, order) => sum + order.shippingCost, 0),
+      revenue,
+      monthlyFactor
+    ),
+    buildLeakInsight(
+      "discount",
+      "Discount Leak",
+      typedOrders.reduce((sum, order) => sum + order.discounts, 0),
+      revenue,
+      monthlyFactor
+    ),
+    buildLeakInsight(
+      "fee",
+      "Fee Leak",
+      typedOrders.reduce((sum, order) => sum + order.paymentFees + order.shopifyFees, 0),
+      revenue,
+      monthlyFactor
+    ),
+    buildLeakInsight(
+      "ad",
+      "Ad Leak",
+      typedOrders.reduce((sum, order) => sum + order.adSpendAllocation, 0),
+      revenue,
+      monthlyFactor
+    )
+  ];
+
   const recommendations: Recommendation[] = [];
 
   for (const product of products.filter((product) => product.status === "Cut Candidate").slice(0, 2)) {
@@ -200,16 +276,16 @@ export async function getStoreInsights(storeId: string) {
     });
   }
 
-  const biggestLeak = leakRows.sort((a, b) => b.value - a.value)[0];
-  if (biggestLeak && biggestLeak.ratio > 0.08) {
-    const impact = biggestLeak.value * 0.2 * monthlyFactor;
+  const biggestLeak = [...leaks].sort((a, b) => b.amount - a.amount)[0];
+  if (biggestLeak && biggestLeak.percentOfRevenue > 0.08) {
+    const impact = biggestLeak.amount * 0.2 * monthlyFactor;
     recommendations.push({
       title: `Fix ${biggestLeak.label.toLowerCase()}`,
       category: "Fix",
       targetEntity: biggestLeak.label,
       summary: `${biggestLeak.label} is materially compressing margin.`,
       why: [
-        `${biggestLeak.label} is ${(biggestLeak.ratio * 100).toFixed(1)}% of revenue.`,
+        `${biggestLeak.label} is ${(biggestLeak.percentOfRevenue * 100).toFixed(1)}% of revenue.`,
         `Recovering 20% would add about $${impact.toFixed(2)}/month.`
       ],
       estimatedMonthlyImpact: impact,
@@ -249,12 +325,12 @@ export async function getStoreInsights(storeId: string) {
       score: confidenceScore,
       band: confidenceBand
     },
-    daily: dailySnapshots.map((snapshot) => ({
+    daily: dailySnapshots.map((snapshot: { date: Date; netProfit: number }) => ({
       date: snapshot.date.toISOString().slice(5, 10),
       netProfit: snapshot.netProfit
     })),
     products,
-    leaks: leakRows,
+    leaks,
     recommendations: recommendations
       .filter((recommendation) => recommendation.estimatedMonthlyImpact > 0)
       .sort((a, b) => b.estimatedMonthlyImpact - a.estimatedMonthlyImpact)
