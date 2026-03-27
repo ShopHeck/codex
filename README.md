@@ -2,6 +2,21 @@
 
 Production-ready public Shopify app (embedded) for true net profit analytics across one or more stores.
 
+## Source of Truth
+
+This repo must follow these documents:
+
+- `docs/SPEC.md`
+- `docs/PROJECT_STARTER.md`
+- `docs/PROFIT_RULES.md`
+
+Important rules:
+- Do not invent alternative profit formulas
+- Do not invent alternative recommendation logic
+- Do not show product profit without full cost allocation
+- Missing data must reduce confidence scores
+- No recommendation may be shown without dollar impact
+
 ## Product & architecture summary
 
 ### Personas
