@@ -19,6 +19,34 @@ enum ExpenseType {
   CUSTOM
 }
 
+enum RecommendationCategory {
+  CUT
+  FIX
+  SCALE
+  ADD
+}
+
+enum RecommendationStatus {
+  OPEN
+  ACCEPTED
+  DISMISSED
+}
+
+enum SyncJobType {
+  FULL_SYNC
+  ORDERS_SYNC
+  PRODUCTS_SYNC
+  RECOMPUTE_PROFIT
+  RECOMPUTE_RECOMMENDATIONS
+}
+
+enum SyncJobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
 model Merchant {
   id          String         @id @default(cuid())
   email       String?        @unique
@@ -45,6 +73,15 @@ model ShopifyStore {
   updatedAt             DateTime              @updatedAt
   merchant              Merchant?             @relation(fields: [merchantId], references: [id])
   orders                Order[]
+  products              Product[]
+  variants              Variant[]
+  refunds               Refund[]
+  shippingCosts         ShippingCost[]
+  fees                  Fee[]
+  orderAttributions     OrderAttribution[]
+  variableCostRules     VariableCostRule[]
+  recommendations       Recommendation[]
+  syncJobs              SyncJob[]
   adSpendEntries        AdSpendEntry[]
   expenses              Expense[]
   billingSubscriptions  BillingSubscription[]
@@ -101,6 +138,14 @@ model Order {
   updatedAt               DateTime    @updatedAt
   store                   ShopifyStore @relation(fields: [storeId], references: [id])
   items                   OrderItem[]
+  refundRecords           Refund[]
+  shippingCosts           ShippingCost[]
+  fees                    Fee[]
+  attribution             OrderAttribution?
+
+  @@index([storeId])
+  @@index([storeId, orderDate])
+  @@index([orderDate])
 }
 
 model OrderItem {
@@ -111,11 +156,195 @@ model OrderItem {
   variantId         String?
   title             String
   quantity          Int
+  quantityFulfilled Int      @default(0)
+  quantityRefunded  Int      @default(0)
   unitPrice         Float
   cogsPerUnit       Float
   totalRevenue      Float
+  discountAllocated Float    @default(0)
+  refundAllocated   Float    @default(0)
+  taxAllocated      Float    @default(0)
   totalCogs         Float
+  cogsAllocated     Float    @default(0)
+  shippingAllocated Float    @default(0)
+  feeAllocated      Float    @default(0)
+  adSpendAllocated  Float    @default(0)
+  variableCostAllocated Float @default(0)
+  netProfit         Float    @default(0)
+  marginPercent     Float    @default(0)
   order             Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  refunds           Refund[]
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([variantId])
+}
+
+model Product {
+  id              String                 @id @default(cuid())
+  storeId         String
+  shopifyProductId String
+  title           String
+  status          String?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  store           ShopifyStore           @relation(fields: [storeId], references: [id])
+  variants        Variant[]
+
+  @@unique([storeId, shopifyProductId])
+  @@index([storeId])
+}
+
+model Variant {
+  id               String                 @id @default(cuid())
+  storeId          String
+  productId        String
+  shopifyVariantId String
+  title            String
+  sku              String?
+  unitCost         Float?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  store            ShopifyStore           @relation(fields: [storeId], references: [id])
+  product          Product                @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, shopifyVariantId])
+  @@index([storeId])
+  @@index([productId])
+}
+
+model Refund {
+  id                 String       @id @default(cuid())
+  storeId            String
+  orderId            String
+  orderItemId        String?
+  shopifyRefundId    String?
+  refundedAt         DateTime
+  amount             Float        @default(0)
+  shippingRefund     Float        @default(0)
+  taxRefund          Float        @default(0)
+  refundedQuantity   Int          @default(0)
+  cogsReversalAmount Float        @default(0)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  store              ShopifyStore @relation(fields: [storeId], references: [id])
+  order              Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderItem          OrderItem?   @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+
+  @@index([storeId])
+  @@index([orderId])
+  @@index([orderItemId])
+  @@index([refundedAt])
+}
+
+model ShippingCost {
+  id               String       @id @default(cuid())
+  storeId          String
+  orderId          String
+  source           String
+  amount           Float
+  shippingRefunded Float        @default(0)
+  isEstimated      Boolean      @default(false)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  store            ShopifyStore @relation(fields: [storeId], references: [id])
+  order            Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@index([orderId])
+}
+
+model Fee {
+  id            String       @id @default(cuid())
+  storeId       String
+  orderId       String
+  feeType       String
+  percentRate   Float?
+  flatAmount    Float        @default(0)
+  amount        Float
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  store         ShopifyStore @relation(fields: [storeId], references: [id])
+  order         Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@index([orderId])
+}
+
+model OrderAttribution {
+  id             String       @id @default(cuid())
+  storeId        String
+  orderId        String       @unique
+  mode           String
+  sourceChannel  String?
+  campaign       String?
+  adSpendAmount  Float        @default(0)
+  confidenceScore Int         @default(100)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  store          ShopifyStore @relation(fields: [storeId], references: [id])
+  order          Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@index([orderId])
+}
+
+model VariableCostRule {
+  id             String       @id @default(cuid())
+  storeId        String
+  name           String
+  costType       String
+  amount         Float
+  productId      String?
+  variantId      String?
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  store          ShopifyStore @relation(fields: [storeId], references: [id])
+
+  @@index([storeId])
+  @@index([productId])
+  @@index([variantId])
+}
+
+model Recommendation {
+  id                      String                 @id @default(cuid())
+  storeId                 String
+  productId               String?
+  variantId               String?
+  category                RecommendationCategory
+  status                  RecommendationStatus   @default(OPEN)
+  title                   String
+  summary                 String
+  targetEntity            String?
+  estimatedMonthlyImpact  Float
+  confidenceScore         Int                    @default(100)
+  actionCta               String?
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+  store                   ShopifyStore           @relation(fields: [storeId], references: [id])
+
+  @@index([storeId])
+  @@index([productId])
+  @@index([variantId])
+}
+
+model SyncJob {
+  id             String        @id @default(cuid())
+  storeId        String
+  jobType        SyncJobType
+  status         SyncJobStatus @default(QUEUED)
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  runAfter       DateTime?
+  payload        Json?
+  errorMessage   String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  store          ShopifyStore  @relation(fields: [storeId], references: [id])
+
+  @@index([storeId])
+  @@index([status, runAfter])
 }
 
 model AdSpendEntry {
@@ -147,26 +376,55 @@ model DailyProfitSnapshot {
   id             String       @id @default(cuid())
   storeId        String
   date           DateTime
+  periodStart    DateTime?
+  periodEnd      DateTime?
   revenue        Float
+  discounts      Float        @default(0)
+  refunds        Float        @default(0)
+  shippingCost   Float        @default(0)
+  fees           Float        @default(0)
+  adSpend        Float        @default(0)
+  variableCosts  Float        @default(0)
+  contributionProfit Float    @default(0)
+  confidenceScore Int         @default(100)
   totalCosts     Float
   netProfit      Float
   margin         Float
   store          ShopifyStore @relation(fields: [storeId], references: [id])
 
   @@unique([storeId, date])
+  @@index([storeId])
+  @@index([date])
+  @@index([storeId, periodStart, periodEnd])
 }
 
 model ProductProfitSnapshot {
   id             String       @id @default(cuid())
   storeId        String
   date           DateTime
+  periodStart    DateTime?
+  periodEnd      DateTime?
   productId      String
+  variantId      String?
   productTitle   String
   revenue        Float
+  discounts      Float        @default(0)
+  refunds        Float        @default(0)
+  shippingCost   Float        @default(0)
+  fees           Float        @default(0)
+  adSpend        Float        @default(0)
+  variableCosts  Float        @default(0)
+  contributionProfit Float    @default(0)
+  confidenceScore Int         @default(100)
   totalCosts     Float
   netProfit      Float
   margin         Float
   store          ShopifyStore @relation(fields: [storeId], references: [id])
 
   @@index([storeId, date])
+  @@index([storeId])
+  @@index([productId])
+  @@index([variantId])
+  @@index([date])
+  @@index([storeId, periodStart, periodEnd])
 }

@@ -27,14 +27,20 @@ async function main() {
     create: { key: "starter", name: "Starter", monthlyPrice: 29, shopifyPlanName: "Starter" }
   });
 
-  await prisma.billingSubscription.create({
-    data: {
-      storeId: store.id,
-      planId: plan.id,
-      status: BillingStatus.ACTIVE,
-      shopifySubscriptionGid: "gid://shopify/AppSubscription/demo"
-    }
+  const existingSubscription = await prisma.billingSubscription.findFirst({
+    where: { storeId: store.id, planId: plan.id, status: BillingStatus.ACTIVE }
   });
+
+  if (!existingSubscription) {
+    await prisma.billingSubscription.create({
+      data: {
+        storeId: store.id,
+        planId: plan.id,
+        status: BillingStatus.ACTIVE,
+        shopifySubscriptionGid: "gid://shopify/AppSubscription/demo"
+      }
+    });
+  }
 
   await prisma.expense.create({
     data: { storeId: store.id, date: new Date(), label: "Klaviyo", type: ExpenseType.SAAS, amount: 120, recurring: true }
