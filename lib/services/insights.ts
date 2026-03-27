@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { buildRecommendations, type Recommendation } from "@/lib/recommendations";
 
 type OrderWithItems = {
   id: string;
@@ -48,16 +49,7 @@ type ProductAccumulator = ProductInsight & {
   adSpendAllocated: number;
 };
 
-export type Recommendation = {
-  title: string;
-  category: "Cut" | "Fix" | "Scale" | "Add";
-  targetEntity: string;
-  summary: string;
-  why: string[];
-  estimatedMonthlyImpact: number;
-  confidenceScore: number;
-  actionCta: string;
-};
+
 
 export type LeakInsight = {
   key: "refund" | "shipping" | "discount" | "fee" | "ad";
@@ -89,8 +81,8 @@ export function getProductStatus(
   shippingBurden = 0
 ): ProductInsight["status"] {
   if (margin <= 0) return "Cut Candidate";
-  if (margin < 0.12 || refundRate >= 0.08 || shippingBurden >= 0.15) return "Needs Fix";
-  if (margin >= 0.25) return "Scale";
+  if (margin < 0.12 || refundRate >= 0.05 || shippingBurden >= 0.15) return "Needs Fix";
+  if (margin >= 0.25 && refundRate < 0.05) return "Scale";
   return "Healthy";
 }
 
@@ -257,60 +249,12 @@ export async function getStoreInsights(storeId: string) {
     )
   ];
 
-  const recommendations: Recommendation[] = [];
-
-  for (const product of products.filter((product) => product.status === "Cut Candidate").slice(0, 2)) {
-    const impact = Math.abs(product.netProfit) * monthlyFactor;
-    recommendations.push({
-      title: `Cut or relaunch ${product.productTitle}`,
-      category: "Cut",
-      targetEntity: product.productTitle,
-      summary: `${product.productTitle} is currently losing contribution profit.`,
-      why: [
-        `Margin is ${(product.margin * 100).toFixed(1)}%.`,
-        `Estimated monthly drag is $${impact.toFixed(2)}.`
-      ],
-      estimatedMonthlyImpact: impact,
-      confidenceScore,
-      actionCta: "Pause ads and review pricing/COGS"
-    });
-  }
-
-  const biggestLeak = [...leaks].sort((a, b) => b.amount - a.amount)[0];
-  if (biggestLeak && biggestLeak.percentOfRevenue > 0.08) {
-    const impact = biggestLeak.amount * 0.2 * monthlyFactor;
-    recommendations.push({
-      title: `Fix ${biggestLeak.label.toLowerCase()}`,
-      category: "Fix",
-      targetEntity: biggestLeak.label,
-      summary: `${biggestLeak.label} is materially compressing margin.`,
-      why: [
-        `${biggestLeak.label} is ${(biggestLeak.percentOfRevenue * 100).toFixed(1)}% of revenue.`,
-        `Recovering 20% would add about $${impact.toFixed(2)}/month.`
-      ],
-      estimatedMonthlyImpact: impact,
-      confidenceScore,
-      actionCta: "Apply pricing + ops adjustments"
-    });
-  }
-
-  const scaleProduct = products.find((product) => product.status === "Scale");
-  if (scaleProduct) {
-    const impact = Math.max(scaleProduct.netProfit, 0) * 0.15 * monthlyFactor;
-    recommendations.push({
-      title: `Scale ${scaleProduct.productTitle}`,
-      category: "Scale",
-      targetEntity: scaleProduct.productTitle,
-      summary: `${scaleProduct.productTitle} is a strong performer with healthy margin.`,
-      why: [
-        `Margin is ${(scaleProduct.margin * 100).toFixed(1)}%.`,
-        `A 15% volume lift could add $${impact.toFixed(2)}/month.`
-      ],
-      estimatedMonthlyImpact: impact,
-      confidenceScore,
-      actionCta: "Increase budget and inventory coverage"
-    });
-  }
+  const recommendations: Recommendation[] = buildRecommendations({
+    products,
+    leaks,
+    confidenceScore,
+    monthlyFactor
+  });
 
   return {
     kpis: {
@@ -331,8 +275,6 @@ export async function getStoreInsights(storeId: string) {
     })),
     products,
     leaks,
-    recommendations: recommendations
-      .filter((recommendation) => recommendation.estimatedMonthlyImpact > 0)
-      .sort((a, b) => b.estimatedMonthlyImpact - a.estimatedMonthlyImpact)
+    recommendations
   };
 }
