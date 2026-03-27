@@ -12,6 +12,43 @@ mutation AppSubscriptionCreate($name: String!, $returnUrl: URL!, $lineItems: [Ap
   }
 }`;
 
+const GET_SUBSCRIPTION_STATUS = `
+query GetSubscriptionStatus($id: ID!) {
+  node(id: $id) {
+    ... on AppSubscription {
+      id
+      status
+      currentPeriodEnd
+    }
+  }
+}`;
+
+type ShopifySubscriptionStatus = {
+  id: string;
+  status: string;
+  currentPeriodEnd: string | null;
+};
+
+function isActiveShopifyStatus(status: string) {
+  return status === "ACTIVE" || status === "ACCEPTED";
+}
+
+function isCancelledShopifyStatus(status: string) {
+  return ["CANCELLED", "DECLINED", "EXPIRED", "FROZEN"].includes(status);
+}
+
+export async function getSubscriptionStatusByGid(
+  shopDomain: string,
+  accessToken: string,
+  shopifySubscriptionGid: string
+): Promise<ShopifySubscriptionStatus | null> {
+  const data = await shopifyGraphQL<{
+    node: ShopifySubscriptionStatus | null;
+  }>(shopDomain, accessToken, GET_SUBSCRIPTION_STATUS, { id: shopifySubscriptionGid });
+
+  return data.node;
+}
+
 export async function ensureBilling(storeId: string, manage = false) {
   const store = await prisma.shopifyStore.findUnique({
     where: { id: storeId },
@@ -71,9 +108,101 @@ export async function ensureBilling(storeId: string, manage = false) {
   return { active: false, confirmationUrl: data.appSubscriptionCreate.confirmationUrl };
 }
 
-export async function activateLatestPendingBilling(storeId: string) {
-  await prisma.billingSubscription.updateMany({
+export async function confirmLatestPendingBilling(storeId: string) {
+  const store = await prisma.shopifyStore.findUnique({ where: { id: storeId } });
+  if (!store) throw new Error("Store not found");
+
+  const pending = await prisma.billingSubscription.findFirst({
     where: { storeId, status: BillingStatus.PENDING },
-    data: { status: BillingStatus.ACTIVE }
+    orderBy: { createdAt: "desc" }
   });
+
+  if (!pending) {
+    const latest = await prisma.billingSubscription.findFirst({
+      where: { storeId },
+      orderBy: { createdAt: "desc" }
+    });
+
+    return {
+      outcome: "already_processed" as const,
+      status: latest?.status ?? null,
+      transitionedAt: latest?.updatedAt ?? null
+    };
+  }
+
+  if (!pending.shopifySubscriptionGid) {
+    await prisma.billingSubscription.updateMany({
+      where: { id: pending.id, status: BillingStatus.PENDING },
+      data: { status: BillingStatus.CANCELLED }
+    });
+
+    const updated = await prisma.billingSubscription.findUnique({ where: { id: pending.id } });
+    return {
+      outcome: "invalid" as const,
+      status: BillingStatus.CANCELLED,
+      shopifyStatus: null,
+      transitionedAt: updated?.updatedAt ?? null
+    };
+  }
+
+  const shopifySubscription = await getSubscriptionStatusByGid(
+    store.shopDomain,
+    store.accessToken,
+    pending.shopifySubscriptionGid
+  );
+
+  if (!shopifySubscription) {
+    await prisma.billingSubscription.updateMany({
+      where: { id: pending.id, status: BillingStatus.PENDING },
+      data: { status: BillingStatus.CANCELLED }
+    });
+
+    const updated = await prisma.billingSubscription.findUnique({ where: { id: pending.id } });
+    return {
+      outcome: "invalid" as const,
+      status: BillingStatus.CANCELLED,
+      shopifyStatus: null,
+      transitionedAt: updated?.updatedAt ?? null
+    };
+  }
+
+  if (isActiveShopifyStatus(shopifySubscription.status)) {
+    await prisma.billingSubscription.updateMany({
+      where: { id: pending.id, status: BillingStatus.PENDING },
+      data: {
+        status: BillingStatus.ACTIVE,
+        currentPeriodEnd: shopifySubscription.currentPeriodEnd ? new Date(shopifySubscription.currentPeriodEnd) : null
+      }
+    });
+
+    const updated = await prisma.billingSubscription.findUnique({ where: { id: pending.id } });
+    return {
+      outcome: "activated" as const,
+      status: BillingStatus.ACTIVE,
+      shopifyStatus: shopifySubscription.status,
+      transitionedAt: updated?.updatedAt ?? null
+    };
+  }
+
+  if (isCancelledShopifyStatus(shopifySubscription.status)) {
+    await prisma.billingSubscription.updateMany({
+      where: { id: pending.id, status: BillingStatus.PENDING },
+      data: { status: BillingStatus.CANCELLED }
+    });
+
+    const updated = await prisma.billingSubscription.findUnique({ where: { id: pending.id } });
+    return {
+      outcome: "cancelled" as const,
+      status: BillingStatus.CANCELLED,
+      shopifyStatus: shopifySubscription.status,
+      transitionedAt: updated?.updatedAt ?? null
+    };
+  }
+
+  return {
+    outcome: "pending" as const,
+    status: BillingStatus.PENDING,
+    shopifyStatus: shopifySubscription.status,
+    transitionedAt: pending.updatedAt
+  };
 }
