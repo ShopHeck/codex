@@ -69,6 +69,7 @@ type ShopifyOrderPayload = {
 export async function upsertOrderFromWebhook(shop: string, payload: ShopifyOrderPayload) {
   const store = await prisma.shopifyStore.findUnique({ where: { shopDomain: shop } });
   if (!store) return;
+  const hasOrderChannelUpdate = Object.prototype.hasOwnProperty.call(payload, "source_name");
 
   const shippingFromLines = (payload.shipping_lines ?? []).reduce((sum, line) => {
     const discounted = Number(line.discounted_price ?? Number.NaN);
@@ -110,7 +111,7 @@ export async function upsertOrderFromWebhook(shop: string, payload: ShopifyOrder
     update: {
       orderNumber: payload.name,
       orderDate: new Date(payload.created_at),
-      channel: payload.source_name ?? null,
+      ...(hasOrderChannelUpdate ? { channel: payload.source_name ?? null } : {}),
       status: payload.financial_status,
       revenue: Number(payload.total_price),
       discounts: Number(payload.total_discounts),
@@ -175,8 +176,20 @@ export async function upsertOrderFromWebhook(shop: string, payload: ShopifyOrder
 
     const shippingRefund = Number(refund.shipping?.amount ?? 0);
     const taxRefund = Number(refund.shipping?.tax ?? 0);
+    const refundLines = refund.refund_line_items ?? [];
+    const mappedSubtotal = refundLines.reduce((sum, refundLine) => {
+      if (refundLine.subtotal == null) return sum;
+      return sum + Number(refundLine.subtotal);
+    }, 0);
+    const missingSubtotalCount = refundLines.reduce((count, refundLine) => {
+      return count + (refundLine.subtotal == null ? 1 : 0);
+    }, 0);
+    const remainingUnmappedAmount = Math.max(0, amount - mappedSubtotal);
+    const fallbackSubtotalPerMissingLine = missingSubtotalCount > 0
+      ? remainingUnmappedAmount / missingSubtotalCount
+      : 0;
 
-    for (const refundLine of refund.refund_line_items ?? []) {
+    for (const refundLine of refundLines) {
       const lineItemId = refundLine.line_item_id ?? refundLine.line_item?.id;
       const orderItem = lineItemId
         ? await prisma.orderItem.findFirst({
@@ -193,7 +206,7 @@ export async function upsertOrderFromWebhook(shop: string, payload: ShopifyOrder
           orderItemId: orderItem?.id ?? null,
           shopifyRefundId: refund.id ? String(refund.id) : null,
           refundedAt,
-          amount: Number(refundLine.subtotal ?? amount),
+          amount: Number(refundLine.subtotal ?? fallbackSubtotalPerMissingLine),
           shippingRefund,
           taxRefund: Number(refundLine.total_tax ?? taxRefund),
           refundedQuantity,
@@ -203,20 +216,26 @@ export async function upsertOrderFromWebhook(shop: string, payload: ShopifyOrder
     }
   }
 
+  const hasSourceUpdate = Object.prototype.hasOwnProperty.call(payload, "source_name")
+    || Object.prototype.hasOwnProperty.call(payload, "referring_site");
+  const hasCampaignUpdate = Object.prototype.hasOwnProperty.call(payload, "landing_site");
+  const sourceChannel = payload.source_name ?? payload.referring_site ?? null;
+  const campaign = payload.landing_site ?? null;
+
   await prisma.orderAttribution.upsert({
     where: { orderId: order.id },
     create: {
       storeId: store.id,
       orderId: order.id,
       mode: "webhook",
-      sourceChannel: payload.source_name ?? payload.referring_site ?? null,
-      campaign: payload.landing_site ?? null,
+      sourceChannel,
+      campaign,
       adSpendAmount: 0,
       confidenceScore: 100
     },
     update: {
-      sourceChannel: payload.source_name ?? payload.referring_site ?? null,
-      campaign: payload.landing_site ?? null
+      ...(hasSourceUpdate ? { sourceChannel } : {}),
+      ...(hasCampaignUpdate ? { campaign } : {})
     }
   });
 
