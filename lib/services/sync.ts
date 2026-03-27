@@ -6,6 +6,7 @@ type ShopifyOrderPayload = {
   name: string;
   created_at: string;
   financial_status: string;
+  fulfillment_status?: string | null;
   total_price: string;
   total_discounts: string;
   total_tax: string;
@@ -52,8 +53,8 @@ type ShopifyOrderPayload = {
   }>;
   line_items: Array<{
     id: number;
-    product_id: number | null;
-    variant_id: number | null;
+    product_id: number | string | null;
+    variant_id: number | string | null;
     title: string;
     quantity: number;
     fulfilled_quantity?: number;
@@ -66,17 +67,23 @@ type ShopifyOrderPayload = {
   }>;
 };
 
+const toNumber = (value: string | number | undefined | null) => {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
 export async function upsertOrderFromWebhook(shop: string, payload: ShopifyOrderPayload) {
   const store = await prisma.shopifyStore.findUnique({ where: { shopDomain: shop } });
   if (!store) return;
-  const hasOrderChannelUpdate = Object.prototype.hasOwnProperty.call(payload, "source_name");
+  const hasOrderChannelUpdate = Object.prototype.hasOwnProperty.call(payload, "source_name")
+    || Object.prototype.hasOwnProperty.call(payload, "referring_site");
 
   const shippingFromLines = (payload.shipping_lines ?? []).reduce((sum, line) => {
     const discounted = Number(line.discounted_price ?? Number.NaN);
-    const base = Number(line.price ?? 0);
+    const base = toNumber(line.price);
     return sum + (Number.isFinite(discounted) ? discounted : base);
   }, 0);
-  const shippingTotal = Number(
+  const shippingTotal = toNumber(
     payload.total_shipping_price_set?.shop_money?.amount ??
       (shippingFromLines > 0 ? shippingFromLines : 0)
   );
@@ -85,23 +92,31 @@ export async function upsertOrderFromWebhook(shop: string, payload: ShopifyOrder
   let orderRefundsTotal = 0;
 
   for (const refund of payload.refunds ?? []) {
-    let refundAmount = 0;
+    let transactionAndAdjustmentTotal = 0;
     for (const transaction of refund.transactions ?? []) {
-      refundAmount += Number(transaction.amount ?? 0);
+      transactionAndAdjustmentTotal += toNumber(transaction.amount);
     }
     for (const adjustment of refund.order_adjustments ?? []) {
-      refundAmount += Number(adjustment.amount ?? 0);
+      transactionAndAdjustmentTotal += toNumber(adjustment.amount);
     }
-    orderRefundsTotal += refundAmount;
+
+    const lineItemSubtotalTotal = (refund.refund_line_items ?? []).reduce((sum, refundLine) => {
+      return sum + toNumber(refundLine.subtotal) + toNumber(refundLine.total_tax);
+    }, 0);
+    const shippingAndTaxRefundTotal = toNumber(refund.shipping?.amount) + toNumber(refund.shipping?.tax);
+    const rawRefundTotal = transactionAndAdjustmentTotal > 0
+      ? transactionAndAdjustmentTotal
+      : lineItemSubtotalTotal + shippingAndTaxRefundTotal;
+    orderRefundsTotal += rawRefundTotal;
 
     for (const refundLine of refund.refund_line_items ?? []) {
       const lineItemId = refundLine.line_item_id ?? refundLine.line_item?.id;
       if (!lineItemId) continue;
 
       const existing = refundedByLineItem.get(lineItemId) ?? { quantity: 0, amount: 0, tax: 0 };
-      existing.quantity += Number(refundLine.quantity ?? 0);
-      existing.amount += Number(refundLine.subtotal ?? 0);
-      existing.tax += Number(refundLine.total_tax ?? 0);
+      existing.quantity += toNumber(refundLine.quantity);
+      existing.amount += toNumber(refundLine.subtotal);
+      existing.tax += toNumber(refundLine.total_tax);
       refundedByLineItem.set(lineItemId, existing);
     }
   }
@@ -111,11 +126,11 @@ export async function upsertOrderFromWebhook(shop: string, payload: ShopifyOrder
     update: {
       orderNumber: payload.name,
       orderDate: new Date(payload.created_at),
-      ...(hasOrderChannelUpdate ? { channel: payload.source_name ?? null } : {}),
+      ...(hasOrderChannelUpdate ? { channel: payload.source_name ?? payload.referring_site ?? null } : {}),
       status: payload.financial_status,
-      revenue: Number(payload.total_price),
-      discounts: Number(payload.total_discounts),
-      taxes: Number(payload.total_tax),
+      revenue: toNumber(payload.current_total_price ?? payload.total_price),
+      discounts: toNumber(payload.current_total_discounts ?? payload.total_discounts),
+      taxes: toNumber(payload.current_total_tax ?? payload.total_tax),
       refunds: orderRefundsTotal,
       shippingCost: Number.isFinite(shippingTotal) ? shippingTotal : 0
     },
@@ -124,11 +139,11 @@ export async function upsertOrderFromWebhook(shop: string, payload: ShopifyOrder
       shopifyOrderId: String(payload.id),
       orderNumber: payload.name,
       orderDate: new Date(payload.created_at),
-      channel: payload.source_name ?? null,
+      channel: payload.source_name ?? payload.referring_site ?? null,
       status: payload.financial_status,
-      revenue: Number(payload.total_price),
-      discounts: Number(payload.total_discounts),
-      taxes: Number(payload.total_tax),
+      revenue: toNumber(payload.current_total_price ?? payload.total_price),
+      discounts: toNumber(payload.current_total_discounts ?? payload.total_discounts),
+      taxes: toNumber(payload.current_total_tax ?? payload.total_tax),
       refunds: orderRefundsTotal,
       shippingCost: Number.isFinite(shippingTotal) ? shippingTotal : 0
     }
@@ -136,18 +151,25 @@ export async function upsertOrderFromWebhook(shop: string, payload: ShopifyOrder
 
   await prisma.orderItem.deleteMany({ where: { orderId: order.id } });
   for (const item of payload.line_items) {
-    const unitPrice = Number(item.price);
+    const unitPrice = toNumber(item.price);
     const cogsPerUnit = unitPrice * (store.defaultCogsPercent / 100);
     const refundedLine = refundedByLineItem.get(item.id);
-    const quantityRefunded = refundedLine?.quantity ?? 0;
+    const quantityRefundedFromCurrent = typeof item.current_quantity === "number"
+      ? Math.max(0, item.quantity - item.current_quantity)
+      : 0;
+    const quantityRefunded = Math.max(refundedLine?.quantity ?? 0, quantityRefundedFromCurrent);
     const quantityFulfilled = item.fulfilled_quantity
-      ?? (typeof item.fulfillable_quantity === "number" ? Math.max(0, item.quantity - item.fulfillable_quantity) : 0);
+      ?? (typeof item.fulfillable_quantity === "number"
+        ? Math.max(0, item.quantity - item.fulfillable_quantity)
+        : payload.fulfillment_status === "fulfilled"
+          ? item.quantity
+          : 0);
     await prisma.orderItem.create({
       data: {
         orderId: order.id,
         shopifyLineItemId: String(item.id),
-        productId: item.product_id ? String(item.product_id) : null,
-        variantId: item.variant_id ? String(item.variant_id) : null,
+        productId: item.product_id != null ? String(item.product_id) : null,
+        variantId: item.variant_id != null ? String(item.variant_id) : null,
         title: item.title,
         quantity: item.quantity,
         quantityFulfilled,
@@ -155,9 +177,9 @@ export async function upsertOrderFromWebhook(shop: string, payload: ShopifyOrder
         unitPrice,
         cogsPerUnit,
         totalRevenue: unitPrice * item.quantity,
-        discountAllocated: Number(item.total_discount ?? 0),
-        taxAllocated: Number(item.total_tax ?? 0),
-        refundAllocated: refundedLine?.amount ?? 0,
+        discountAllocated: 0,
+        taxAllocated: toNumber(item.total_tax),
+        refundAllocated: 0,
         totalCogs: cogsPerUnit * item.quantity
       }
     });
@@ -168,23 +190,27 @@ export async function upsertOrderFromWebhook(shop: string, payload: ShopifyOrder
     const refundedAt = new Date(refund.processed_at ?? refund.created_at ?? payload.created_at);
     let amount = 0;
     for (const transaction of refund.transactions ?? []) {
-      amount += Number(transaction.amount ?? 0);
+      amount += toNumber(transaction.amount);
     }
     for (const adjustment of refund.order_adjustments ?? []) {
-      amount += Number(adjustment.amount ?? 0);
+      amount += toNumber(adjustment.amount);
     }
 
-    const shippingRefund = Number(refund.shipping?.amount ?? 0);
-    const taxRefund = Number(refund.shipping?.tax ?? 0);
+    const shippingRefund = toNumber(refund.shipping?.amount);
+    const taxRefund = toNumber(refund.shipping?.tax);
     const refundLines = refund.refund_line_items ?? [];
+    const totalRefundFromLines = refundLines.reduce((sum, refundLine) => {
+      return sum + toNumber(refundLine.subtotal) + toNumber(refundLine.total_tax);
+    }, 0) + shippingRefund + taxRefund;
+    const refundAmount = amount > 0 ? amount : totalRefundFromLines;
     const mappedSubtotal = refundLines.reduce((sum, refundLine) => {
       if (refundLine.subtotal == null) return sum;
-      return sum + Number(refundLine.subtotal);
+      return sum + toNumber(refundLine.subtotal);
     }, 0);
     const missingSubtotalCount = refundLines.reduce((count, refundLine) => {
       return count + (refundLine.subtotal == null ? 1 : 0);
     }, 0);
-    const remainingUnmappedAmount = Math.max(0, amount - mappedSubtotal);
+    const remainingUnmappedAmount = Math.max(0, refundAmount - mappedSubtotal);
     const fallbackSubtotalPerMissingLine = missingSubtotalCount > 0
       ? remainingUnmappedAmount / missingSubtotalCount
       : 0;
@@ -197,7 +223,7 @@ export async function upsertOrderFromWebhook(shop: string, payload: ShopifyOrder
             select: { id: true, cogsPerUnit: true }
           })
         : null;
-      const refundedQuantity = Number(refundLine.quantity ?? 0);
+      const refundedQuantity = toNumber(refundLine.quantity);
 
       await prisma.refund.create({
         data: {
@@ -206,11 +232,28 @@ export async function upsertOrderFromWebhook(shop: string, payload: ShopifyOrder
           orderItemId: orderItem?.id ?? null,
           shopifyRefundId: refund.id ? String(refund.id) : null,
           refundedAt,
-          amount: Number(refundLine.subtotal ?? fallbackSubtotalPerMissingLine),
+          amount: toNumber(refundLine.subtotal ?? fallbackSubtotalPerMissingLine),
           shippingRefund,
-          taxRefund: Number(refundLine.total_tax ?? taxRefund),
+          taxRefund: toNumber(refundLine.total_tax ?? taxRefund),
           refundedQuantity,
           cogsReversalAmount: (orderItem?.cogsPerUnit ?? 0) * refundedQuantity
+        }
+      });
+    }
+
+    if (refundLines.length === 0) {
+      await prisma.refund.create({
+        data: {
+          storeId: store.id,
+          orderId: order.id,
+          orderItemId: null,
+          shopifyRefundId: refund.id ? String(refund.id) : null,
+          refundedAt,
+          amount: refundAmount,
+          shippingRefund,
+          taxRefund,
+          refundedQuantity: 0,
+          cogsReversalAmount: 0
         }
       });
     }
