@@ -7,12 +7,5 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const insights = await getStoreInsights(session.storeId);
-
-  return NextResponse.json({
-    kpis: insights.kpis,
-    confidence: insights.confidence,
-    daily: insights.daily,
-    costBreakdown: insights.leaks.map((leak) => ({ label: leak.label, value: leak.value })),
-    recommendations: insights.recommendations.slice(0, 3)
-  });
+  return NextResponse.json({ leaks: insights.leaks, revenue: insights.kpis.revenue, confidence: insights.confidence });
 }
