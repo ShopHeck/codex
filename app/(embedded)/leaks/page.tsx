@@ -22,7 +22,7 @@ export default async function LeaksPage() {
   const data = await getStoreInsights(session.storeId);
   const rankedLeaks = [...data.leaks].sort((a, b) => b.amount - a.amount);
   const biggestLeak = rankedLeaks[0];
-  const topIssues = rankedLeaks.slice(0, 3);
+  const topIssues = [...data.leaks].sort((a, b) => b.impactEstimate - a.impactEstimate).slice(0, 3);
 
   return (
     <div className="space-y-6">
