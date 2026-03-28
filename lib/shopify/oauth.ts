@@ -52,5 +52,6 @@ export function verifyHmac(params: URLSearchParams) {
     .update(filtered)
     .digest("hex");
 
+  if (generated.length !== hmac.length) return false;
   return crypto.timingSafeEqual(Buffer.from(generated), Buffer.from(hmac));
 }

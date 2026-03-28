@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 function verifyWebhook(body: string, hmac: string | null) {
   if (!hmac) return false;
   const digest = crypto.createHmac("sha256", config.shopifyApiSecret).update(body, "utf8").digest("base64");
+  if (digest.length !== hmac.length) return false;
   return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(hmac));
 }
 
