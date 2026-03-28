@@ -2,6 +2,13 @@ import { BillingStatus, ExpenseType, PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+function daysAgo(days: number) {
+  const date = new Date();
+  date.setUTCHours(0, 0, 0, 0);
+  date.setUTCDate(date.getUTCDate() - days);
+  return date;
+}
+
 const FIXTURE = {
   merchant: {
     email: "demo@realprofit.app",
@@ -42,13 +49,13 @@ const FIXTURE = {
   ],
   adSpendEntries: [
     {
-      date: new Date("2026-01-01T00:00:00.000Z"),
+      date: daysAgo(7),
       channel: "meta",
       amount: 240,
       notes: "Deterministic fixture: Meta spend"
     },
     {
-      date: new Date("2026-01-01T00:00:00.000Z"),
+      date: daysAgo(2),
       channel: "google",
       amount: 160,
       notes: "Deterministic fixture: Google spend"
