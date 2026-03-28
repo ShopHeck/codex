@@ -141,11 +141,13 @@ Manual setup if preferred:
 5. Expose local URL via ngrok/cloudflared and set `APP_URL` accordingly.
 
 ## Shopify Partner dashboard configuration
+Use **one Partner app configuration for testing** and keep one stable staging domain to reduce callback mismatch errors.
+
 In your Partner app (public app):
-- **App URL:** `https://<your-domain>/install`
-- **Allowed redirection URL(s):** `https://<your-domain>/api/auth/callback`
-- **Webhook endpoint URL:** `https://<your-domain>/api/shopify/webhooks`
-- Register webhooks for:
+- **App URL:** `https://<test-domain>/install`
+- **Allowed redirection URL(s):** `https://<test-domain>/api/auth/callback`
+- **Webhook endpoint URL:** `https://<test-domain>/api/shopify/webhooks`
+- Register webhooks for required topics:
   - `orders/create`
   - `orders/updated`
   - `orders/cancelled`
@@ -154,6 +156,11 @@ In your Partner app (public app):
   - `customers/redact`
   - `customers/data_request`
   - `shop/redact`
+
+Scope and route parity checks:
+- Ensure `SHOPIFY_SCOPES` includes at least: `read_orders,read_products,read_customers`
+- Run `npm run verify:shopify-config` to print expected Partner URLs from `APP_URL` and confirm required scopes are present.
+- Re-run the check any time your tunnel or domain changes.
 
 ## Billing setup (Shopify Billing API only)
 - App uses GraphQL `appSubscriptionCreate` recurring plan (Starter @ $29).
