@@ -134,11 +134,24 @@ Manual setup if preferred:
 1. `npm install`
 2. `cp .env.example .env`
 3. Configure Postgres, then run:
-   - `npx prisma migrate dev --name init`
+   - `npx prisma migrate deploy`
    - `npx prisma generate`
    - `npm run prisma:seed`
 4. Start app: `npm run dev`
 5. Expose local URL via ngrok/cloudflared and set `APP_URL` accordingly.
+
+### Prisma schema + migration source of truth
+- `prisma/schema.prisma` is the canonical schema definition.
+- Committed migration history lives in `prisma/migrations/` and must be kept in git for reproducible developer + QA database setup.
+- When schema changes are needed, update `prisma/schema.prisma`, create a new migration locally, and commit both schema and migration files together.
+
+### Migration workflow for testing environments
+Use this sequence for QA, staging-like environments, and any install/reinstall test loop:
+1. `npx prisma migrate deploy`
+2. `npx prisma generate`
+3. `npm run prisma:seed`
+
+This guarantees the database shape matches committed migrations and fixtures are available for deterministic UX validation.
 
 ## Shopify Partner dashboard configuration
 Use **one Partner app configuration for testing** and keep one stable staging domain to reduce callback mismatch errors.
@@ -183,6 +196,25 @@ Scope and route parity checks:
 ## Demo mode / seed fixtures
 - Use `npm run prisma:seed` to create demo merchant/store, active subscription, recurring expense, and ad spend entries.
 - You can ingest demo orders through webhook endpoint using signed payloads or direct DB inserts.
+
+## Reset / reseed runbook for QA testing cycles
+Use this runbook when testing first-run and lifecycle scenarios (new store installs, uninstall/reinstall, or data cleanup between test passes).
+
+1. Reset data for a clean cycle:
+   - `npx prisma migrate reset --force --skip-generate`
+2. Reapply committed schema state + regenerate client:
+   - `npx prisma migrate deploy`
+   - `npx prisma generate`
+3. Reseed deterministic fixtures:
+   - `npm run prisma:seed`
+4. Reinstall/reopen the app and validate onboarding and billing routes.
+
+### Seed verification checklist for first-run UX
+After reseeding, confirm these entities exist:
+- `ShopifyStore` fixture: `demo-store.myshopify.com`
+- `BillingSubscription` fixture: one ACTIVE subscription linked to the demo store
+- Onboarding-related store settings: `onboardingCompleted=true` and default cost assumptions on the seeded `ShopifyStore` record
+- Supporting cost inputs: recurring `Expense` fixture and deterministic `AdSpendEntry` fixtures
 
 ## App Store listing checklist
 - App name: **Real Profit for Shopify** (alternatives: True Net Profit, ProfitLens for Shopify)
