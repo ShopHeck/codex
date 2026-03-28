@@ -24,7 +24,6 @@
   "setup": "npm run doctor && npm install && npm run prisma:generate",
   "repair": "node scripts/repair-env.mjs",
   "postinstall": "prisma generate"
-}
   },
   "dependencies": {
     "@prisma/client": "6.19.2",
