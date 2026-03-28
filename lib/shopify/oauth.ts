@@ -52,6 +52,9 @@ export function verifyHmac(params: URLSearchParams) {
     .update(filtered)
     .digest("hex");
 
-  if (generated.length !== hmac.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(generated), Buffer.from(hmac));
+  const generatedBuffer = Buffer.from(generated, "utf8");
+  const hmacBuffer = Buffer.from(hmac, "utf8");
+
+  if (generatedBuffer.length !== hmacBuffer.length) return false;
+  return crypto.timingSafeEqual(generatedBuffer, hmacBuffer);
 }
