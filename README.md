@@ -67,7 +67,63 @@ Per order, net profit = revenue - (COGS + payment fees + Shopify fees + shipping
 - Vitest for core calculation test
 
 ## Environment variables
-See `.env.example`.
+The app requires all variables defined in `.env.example` and fails fast at startup if any are missing.
+
+### Required variables (baseline)
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `APP_URL` | Yes | Public app origin used by embedded app links, OAuth callbacks, and webhook registration. |
+| `DATABASE_URL` | Yes | PostgreSQL connection string for Prisma. |
+| `SHOPIFY_API_KEY` | Yes | Shopify app client ID from Partner Dashboard. |
+| `SHOPIFY_API_SECRET` | Yes | Shopify app client secret used for OAuth + webhook verification. |
+| `SHOPIFY_SCOPES` | Yes | Comma-separated Admin API scopes granted during install. |
+| `SHOPIFY_API_VERSION` | Yes | Shopify Admin API version (for example `2025-10`). |
+| `SESSION_JWT_SECRET` | Yes | Secret used to sign/verify embedded session JWTs. |
+
+### Environment config matrix (Local, Staging, Pre-Prod)
+Use `.env.example` as the baseline contract for every environment.
+
+| Variable | Local (developer tunnel) | Staging | Pre-Prod |
+| --- | --- | --- | --- |
+| `APP_URL` | `https://real-profit-dev.ngrok-free.app` | `https://staging.realprofit.example.com` | `https://preprod.realprofit.example.com` |
+| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/real_profit` | `postgresql://staging_user:<password>@staging-db.internal:5432/real_profit` | `postgresql://preprod_user:<password>@preprod-db.internal:5432/real_profit` |
+| `SHOPIFY_API_KEY` | `shpka_local_12345` | `shpka_staging_12345` | `shpka_preprod_12345` |
+| `SHOPIFY_API_SECRET` | `shpss_local_replace_me` | `shpss_staging_replace_me` | `shpss_preprod_replace_me` |
+| `SHOPIFY_SCOPES` | `read_orders,read_products,read_analytics,read_fulfillments,read_customers` | Same as local unless explicitly approved change | Same as staging |
+| `SHOPIFY_API_VERSION` | `2025-10` | `2025-10` | `2025-10` |
+| `SESSION_JWT_SECRET` | `local_session_jwt_secret_min_32_chars` | `staging_session_jwt_secret_min_32_chars` | `preprod_session_jwt_secret_min_32_chars` |
+
+> Keep scopes and API version aligned across Local, Staging, and Pre-Prod unless there is a deliberate rollout plan.
+
+## Operational runbook
+
+### APP_URL + Shopify Partner settings (must match exactly)
+`APP_URL` must always be the same deployed/tunnel origin configured in Shopify Partner settings for the same environment.
+
+For example, if `APP_URL=https://real-profit-dev.ngrok-free.app`, configure:
+- **App URL:** `https://real-profit-dev.ngrok-free.app/install`
+- **Allowed redirection URL(s):** `https://real-profit-dev.ngrok-free.app/api/auth/callback`
+- **Webhook endpoint URL:** `https://real-profit-dev.ngrok-free.app/api/shopify/webhooks`
+
+For staging, if `APP_URL=https://staging.realprofit.example.com`, configure:
+- **App URL:** `https://staging.realprofit.example.com/install`
+- **Allowed redirection URL(s):** `https://staging.realprofit.example.com/api/auth/callback`
+- **Webhook endpoint URL:** `https://staging.realprofit.example.com/api/shopify/webhooks`
+
+For pre-prod, if `APP_URL=https://preprod.realprofit.example.com`, configure:
+- **App URL:** `https://preprod.realprofit.example.com/install`
+- **Allowed redirection URL(s):** `https://preprod.realprofit.example.com/api/auth/callback`
+- **Webhook endpoint URL:** `https://preprod.realprofit.example.com/api/shopify/webhooks`
+
+### Secret rotation notes
+- Rotate `SHOPIFY_API_SECRET` and `SESSION_JWT_SECRET` on a scheduled cadence (for example, every 90 days) and immediately after any suspected exposure.
+- Rotation order:
+  1. Generate a new secret in the secret manager.
+  2. Update environment variable in target environment.
+  3. Update Shopify Partner Dashboard client secret when rotating `SHOPIFY_API_SECRET`.
+  4. Redeploy/restart the app so runtime config reloads.
+  5. Verify OAuth install/callback and authenticated embedded navigation.
+- Expect session invalidation after `SESSION_JWT_SECRET` rotation (users may need to re-authenticate).
 
 ## Local development
 1. `nvm use` (uses `.nvmrc`, Node 20)
