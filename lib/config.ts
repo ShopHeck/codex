@@ -5,7 +5,7 @@ export const config = {
   shopifyApiSecret: process.env.SHOPIFY_API_SECRET ?? "",
   scopes:
     process.env.SHOPIFY_SCOPES ??
-    "read_orders,read_products,read_analytics,read_fulfillments,read_customers,write_products",
+    "read_orders,read_products,read_analytics,read_fulfillments,read_customers",
   apiVersion: process.env.SHOPIFY_API_VERSION ?? "2025-10",
   billing: {
     starter: {
