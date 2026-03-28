@@ -1,0 +1,172 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum BillingStatus {
+  PENDING
+  ACTIVE
+  CANCELLED
+}
+
+enum ExpenseType {
+  APP
+  SAAS
+  CUSTOM
+}
+
+model Merchant {
+  id          String         @id @default(cuid())
+  email       String?        @unique
+  name        String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  stores      ShopifyStore[]
+}
+
+model ShopifyStore {
+  id                    String                @id @default(cuid())
+  merchantId            String?
+  shopDomain            String                @unique
+  accessToken           String
+  shopName              String?
+  currency              String                @default("USD")
+  timezone              String                @default("UTC")
+  onboardingCompleted   Boolean               @default(false)
+  defaultCogsPercent    Float                 @default(35)
+  paymentFeePercent     Float                 @default(2.9)
+  shopifyFeePercent     Float                 @default(2)
+  defaultShippingCost   Float                 @default(6)
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  merchant              Merchant?             @relation(fields: [merchantId], references: [id])
+  orders                Order[]
+  adSpendEntries        AdSpendEntry[]
+  expenses              Expense[]
+  billingSubscriptions  BillingSubscription[]
+  dailySnapshots        DailyProfitSnapshot[]
+  productSnapshots      ProductProfitSnapshot[]
+}
+
+model BillingPlan {
+  id               String                @id @default(cuid())
+  key              String                @unique
+  name             String
+  monthlyPrice     Float
+  shopifyPlanName  String
+  subscriptions    BillingSubscription[]
+}
+
+model BillingSubscription {
+  id                         String        @id @default(cuid())
+  storeId                    String
+  planId                     String
+  shopifySubscriptionGid     String?
+  status                     BillingStatus @default(PENDING)
+  confirmationUrl            String?
+  currentPeriodEnd           DateTime?
+  createdAt                  DateTime      @default(now())
+  updatedAt                  DateTime      @updatedAt
+  store                      ShopifyStore  @relation(fields: [storeId], references: [id])
+  plan                       BillingPlan   @relation(fields: [planId], references: [id])
+}
+
+model Order {
+  id                      String      @id @default(cuid())
+  storeId                 String
+  shopifyOrderId          String      @unique
+  orderNumber             String
+  orderDate               DateTime
+  channel                 String?
+  status                  String
+  revenue                 Float
+  discounts               Float       @default(0)
+  taxes                   Float       @default(0)
+  refunds                 Float       @default(0)
+  cogs                    Float       @default(0)
+  shippingCost            Float       @default(0)
+  paymentFees             Float       @default(0)
+  shopifyFees             Float       @default(0)
+  appCostAllocation       Float       @default(0)
+  adSpendAllocation       Float       @default(0)
+  otherCosts              Float       @default(0)
+  totalCosts              Float       @default(0)
+  netProfit               Float       @default(0)
+  margin                  Float       @default(0)
+  createdAt               DateTime    @default(now())
+  updatedAt               DateTime    @updatedAt
+  store                   ShopifyStore @relation(fields: [storeId], references: [id])
+  items                   OrderItem[]
+}
+
+model OrderItem {
+  id                String   @id @default(cuid())
+  orderId           String
+  shopifyLineItemId String
+  productId         String?
+  variantId         String?
+  title             String
+  quantity          Int
+  unitPrice         Float
+  cogsPerUnit       Float
+  totalRevenue      Float
+  totalCogs         Float
+  order             Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model AdSpendEntry {
+  id              String       @id @default(cuid())
+  storeId         String
+  date            DateTime
+  channel         String
+  amount          Float
+  notes           String?
+  store           ShopifyStore @relation(fields: [storeId], references: [id])
+
+  @@index([storeId, date])
+}
+
+model Expense {
+  id              String       @id @default(cuid())
+  storeId         String
+  date            DateTime
+  label           String
+  type            ExpenseType
+  amount          Float
+  recurring       Boolean      @default(false)
+  store           ShopifyStore @relation(fields: [storeId], references: [id])
+
+  @@index([storeId, date])
+}
+
+model DailyProfitSnapshot {
+  id             String       @id @default(cuid())
+  storeId        String
+  date           DateTime
+  revenue        Float
+  totalCosts     Float
+  netProfit      Float
+  margin         Float
+  store          ShopifyStore @relation(fields: [storeId], references: [id])
+
+  @@unique([storeId, date])
+}
+
+model ProductProfitSnapshot {
+  id             String       @id @default(cuid())
+  storeId        String
+  date           DateTime
+  productId      String
+  productTitle   String
+  revenue        Float
+  totalCosts     Float
+  netProfit      Float
+  margin         Float
+  store          ShopifyStore @relation(fields: [storeId], references: [id])
+
+  @@index([storeId, date])
+}
