@@ -8,6 +8,7 @@ This guide documents the expected request chain for app installation and the fai
 2. `/api/auth/start?shop=<shop-domain>`
 3. `/api/auth/callback`
 4. `/api/billing/status`
+5. `/api/billing/confirm`
 
 ## Expected redirects by route
 
@@ -32,6 +33,11 @@ This guide documents the expected request chain for app installation and the fai
 - **Success path:** Active billing redirects to `/onboarding`; inactive billing redirects to Shopify confirmation URL.
 - **Failure path:** Missing/invalid `rp_session` redirects to `/install?error=missing_session`.
 
+### `/api/billing/confirm`
+- **Success path:** Callback validates latest pending DB subscription against Shopify subscription status and redirects to `/dashboard?billing=active`.
+- **Declined path:** If Shopify status is non-active, pending DB record is moved to `CANCELLED` and route redirects to `/dashboard?billing=declined`.
+- **Abandoned path:** If callback is missing `charge_id`, pending DB record is moved to `CANCELLED` and route redirects to `/dashboard?billing=abandoned`.
+
 ## Common failures and checks
 
 ### Invalid HMAC (`error=invalid_hmac`)
@@ -53,4 +59,3 @@ This guide documents the expected request chain for app installation and the fai
 - Use `<shop>.myshopify.com` in install form.
 - Avoid admin/storefront URLs with extra hostnames.
 - The app normalizes case and strips protocol/path, but non-`myshopify.com` hosts are rejected.
-
