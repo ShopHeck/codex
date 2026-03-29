@@ -15,7 +15,17 @@ export function signSession(payload: SessionPayload) {
 
 export function verifySession(token: string): SessionPayload | null {
   try {
-    return jwt.verify(token, config.sessionJwtSecret) as SessionPayload;
+    const decoded = jwt.verify(token, config.sessionJwtSecret);
+    if (!decoded || typeof decoded !== "object") return null;
+
+    const shop = "shop" in decoded ? decoded.shop : null;
+    const storeId = "storeId" in decoded ? decoded.storeId : null;
+
+    if (typeof shop !== "string" || typeof storeId !== "string" || !shop || !storeId) {
+      return null;
+    }
+
+    return { shop, storeId };
   } catch {
     return null;
   }
