@@ -181,8 +181,10 @@ Scope and route parity checks:
   1. OAuth callback stores token and session.
   2. `/api/billing/status` checks active subscription.
   3. If none, create Shopify subscription and redirect to `confirmationUrl`.
-  4. On callback to `/api/billing/confirm`, activate stored subscription.
+  4. `/api/billing/confirm` verifies the latest pending subscription against Shopify before promoting DB status to `ACTIVE`.
+  5. If billing is declined or checkout is abandoned, pending DB status is converted to `CANCELLED` and dashboard is returned with `?billing=declined` or `?billing=abandoned`.
 - No Stripe/off-platform billing used.
+- Billing charge creation defaults to Shopify `test: true`; production charging requires explicitly setting `SHOPIFY_BILLING_TEST_MODE=false`.
 
 ## Install flow QA reference
 - Route chain: `/install` → `/api/auth/start?shop=<shop-domain>` → `/api/auth/callback` → `/api/billing/status`.
@@ -197,6 +199,12 @@ Scope and route parity checks:
    - `npx prisma generate`
 4. Update Partner dashboard URLs to production domain.
 5. Reinstall app on test shop and confirm billing + webhooks.
+
+## Launch gate checklist (before production charges)
+- [ ] Keep Shopify billing in test mode (`SHOPIFY_BILLING_TEST_MODE=true`) until all launch gates are complete.
+- [ ] Complete full billing round-trip (status check → subscription create → confirmation callback → DB `BillingSubscription.ACTIVE`) on at least **two personal development stores**.
+- [ ] Validate declined and abandoned billing callbacks are recorded as `BillingSubscription.CANCELLED` and return safe dashboard redirects.
+- [ ] After all test gates pass, switch to `SHOPIFY_BILLING_TEST_MODE=false` and re-verify one additional install in production billing mode.
 
 ## Demo mode / seed fixtures
 - Use `npm run prisma:seed` to create demo merchant/store, active subscription, recurring expense, and ad spend entries.

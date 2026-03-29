@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { activateLatestPendingBilling, ensureBilling } from "@/lib/services/billing";
+import { confirmBillingSubscription, ensureBilling } from "@/lib/services/billing";
 
 export async function GET(req: NextRequest) {
   const storeId = req.nextUrl.searchParams.get("storeId");
@@ -16,9 +16,10 @@ export async function GET(req: NextRequest) {
   }
 
   if (!chargeId) {
-    return NextResponse.json({ error: "Missing billing callback params" }, { status: 400 });
+    const result = await confirmBillingSubscription(storeId, null);
+    return NextResponse.redirect(new URL(`/dashboard?billing=${result.result}`, req.url));
   }
 
-  await activateLatestPendingBilling(storeId);
-  return NextResponse.redirect(new URL("/dashboard", req.url));
+  const result = await confirmBillingSubscription(storeId, chargeId);
+  return NextResponse.redirect(new URL(`/dashboard?billing=${result.result}`, req.url));
 }
