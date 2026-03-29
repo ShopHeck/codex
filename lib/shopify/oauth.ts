@@ -2,9 +2,20 @@ import crypto from "node:crypto";
 import { config } from "@/lib/config";
 
 export function normalizeShopDomain(raw: string) {
-  const shop = raw.trim().toLowerCase();
-  if (!shop.endsWith(".myshopify.com")) throw new Error("Invalid shop domain");
-  return shop;
+  const trimmed = raw.trim().toLowerCase();
+  if (!trimmed) throw new Error("Invalid shop domain");
+
+  const withoutProtocol = trimmed.replace(/^https?:\/\//, "");
+  const host = withoutProtocol.split("/")[0]?.replace(/\.$/, "") ?? "";
+
+  if (!host.endsWith(".myshopify.com")) throw new Error("Invalid shop domain");
+
+  const shopName = host.slice(0, -".myshopify.com".length);
+  if (!shopName || !/^[a-z0-9][a-z0-9-]*$/.test(shopName)) {
+    throw new Error("Invalid shop domain");
+  }
+
+  return `${shopName}.myshopify.com`;
 }
 
 export function buildAuthUrl(shop: string, state: string) {

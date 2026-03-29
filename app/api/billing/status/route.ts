@@ -5,7 +5,7 @@ import { ensureBilling } from "@/lib/services/billing";
 
 export async function GET() {
   const session = await getSessionFromCookies();
-  if (!session) return NextResponse.redirect(new URL("/install", config.appUrl));
+  if (!session) return NextResponse.redirect(new URL("/install?error=missing_session", config.appUrl));
 
   const result = await ensureBilling(session.storeId);
   if (result.active) return NextResponse.redirect(new URL("/onboarding", config.appUrl));

@@ -184,6 +184,11 @@ Scope and route parity checks:
   4. On callback to `/api/billing/confirm`, activate stored subscription.
 - No Stripe/off-platform billing used.
 
+## Install flow QA reference
+- Route chain: `/install` → `/api/auth/start?shop=<shop-domain>` → `/api/auth/callback` → `/api/billing/status`.
+- Success/failure redirect matrix and troubleshooting steps are documented in `docs/INSTALL_TROUBLESHOOTING.md`.
+- Use the `error` query parameter on `/install` to quickly triage callback failures (`invalid_hmac`, `invalid_state`, `missing_session`, `invalid_shop`).
+
 ## Deployment (Vercel + managed Postgres)
 1. Create managed Postgres (Neon/Supabase/RDS) and set `DATABASE_URL`.
 2. Deploy to Vercel and set all env vars from `.env.example`.
