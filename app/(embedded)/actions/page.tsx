@@ -19,6 +19,7 @@ export default async function ActionsPage() {
               <h2 className="font-medium">{recommendation.title}</h2>
               <span className="rounded bg-gray-100 px-2 py-1 text-xs">{recommendation.category}</span>
             </div>
+            <p className="text-sm text-muted-foreground">Target: {recommendation.targetEntity}</p>
             <p className="text-sm text-muted-foreground">{recommendation.summary}</p>
             <ul className="list-disc pl-5 text-sm">
               {recommendation.why.map((reason) => (
@@ -26,6 +27,7 @@ export default async function ActionsPage() {
               ))}
             </ul>
             <p className="text-sm font-medium">Estimated monthly impact: ${recommendation.estimatedMonthlyImpact.toFixed(2)}</p>
+            <p className="text-sm text-muted-foreground">Confidence score: {recommendation.confidenceScore}/100</p>
             <p className="text-sm text-muted-foreground">Action: {recommendation.actionCta}</p>
           </Card>
         ))}
