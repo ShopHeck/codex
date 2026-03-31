@@ -10,7 +10,9 @@ type OrderWithItems = {
   shippingCost: number;
   paymentFees: number;
   shopifyFees: number;
+  appCostAllocation: number;
   adSpendAllocation: number;
+  otherCosts: number;
   totalCosts: number;
   netProfit: number;
   items: Array<{
@@ -27,9 +29,18 @@ export type ProductInsight = {
   productId: string;
   productTitle: string;
   revenue: number;
-  totalCosts: number;
+  discounts: number;
+  refunds: number;
+  cogs: number;
+  shipping: number;
+  fees: number;
+  adSpend: number;
+  variableCosts: number;
   netProfit: number;
-  margin: number;
+  marginPercent: number;
+  refundRate: number;
+  shippingBurden: number;
+  adAdjustedMargin: number;
   status: "Scale" | "Healthy" | "Needs Fix" | "Cut Candidate";
 };
 
@@ -48,11 +59,22 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
-export function getProductStatus(margin: number): ProductInsight["status"] {
-  if (margin <= 0) return "Cut Candidate";
-  if (margin < 0.12) return "Needs Fix";
-  if (margin >= 0.25) return "Scale";
-  return "Healthy";
+const SCALE_MIN_MARGIN = 0.25;
+const HEALTHY_MIN_MARGIN = 0.12;
+const CUT_MAX_MARGIN = 0;
+const SCALE_MAX_REFUND_RATE = 0.05;
+const HIGH_SHIPPING_BURDEN = 0.15;
+
+export function getProductStatus(product: {
+  marginPercent: number;
+  refundRate: number;
+  shippingBurden: number;
+  netProfit: number;
+}): ProductInsight["status"] {
+  if (product.marginPercent <= CUT_MAX_MARGIN || product.netProfit <= 0) return "Cut Candidate";
+  if (product.marginPercent >= SCALE_MIN_MARGIN && product.refundRate < SCALE_MAX_REFUND_RATE) return "Scale";
+  if (product.marginPercent >= HEALTHY_MIN_MARGIN && product.shippingBurden < HIGH_SHIPPING_BURDEN) return "Healthy";
+  return "Needs Fix";
 }
 
 function getMonthlyFactor(orders: OrderWithItems[]) {
@@ -114,7 +136,6 @@ export async function getStoreInsights(storeId: string) {
   const productMap = new Map<string, ProductInsight>();
   for (const order of typedOrders) {
     const totalItemRevenue = order.items.reduce((sum, item) => sum + item.totalRevenue, 0);
-    const allocatableNonCogsCosts = Math.max(order.totalCosts - order.cogs, 0);
 
     for (const item of order.items) {
       const key = item.productId ?? item.title;
@@ -122,25 +143,86 @@ export async function getStoreInsights(storeId: string) {
         productId: key,
         productTitle: item.title,
         revenue: 0,
-        totalCosts: 0,
+        discounts: 0,
+        refunds: 0,
+        cogs: 0,
+        shipping: 0,
+        fees: 0,
+        adSpend: 0,
+        variableCosts: 0,
         netProfit: 0,
-        margin: 0,
+        marginPercent: 0,
+        refundRate: 0,
+        shippingBurden: 0,
+        adAdjustedMargin: 0,
         status: "Healthy"
       };
 
       const share = totalItemRevenue > 0 ? item.totalRevenue / totalItemRevenue : 0;
-      const allocatedCosts = item.totalCogs + allocatableNonCogsCosts * share;
+      const discountAllocated = order.discounts * share;
+      const refundsAllocated = order.refunds * share;
+      const shippingAllocated = order.shippingCost * share;
+      const feesAllocated = (order.paymentFees + order.shopifyFees) * share;
+      const adSpendAllocated = order.adSpendAllocation * share;
+      const variableCostAllocated = (order.otherCosts + order.appCostAllocation) * share;
+      const allocatedCosts =
+        item.totalCogs +
+        discountAllocated +
+        refundsAllocated +
+        shippingAllocated +
+        feesAllocated +
+        adSpendAllocated +
+        variableCostAllocated;
 
       existing.revenue += item.totalRevenue;
-      existing.totalCosts += allocatedCosts;
-      existing.netProfit = existing.revenue - existing.totalCosts;
-      existing.margin = existing.revenue > 0 ? existing.netProfit / existing.revenue : 0;
-      existing.status = getProductStatus(existing.margin);
+      existing.discounts += discountAllocated;
+      existing.refunds += refundsAllocated;
+      existing.cogs += item.totalCogs;
+      existing.shipping += shippingAllocated;
+      existing.fees += feesAllocated;
+      existing.adSpend += adSpendAllocated;
+      existing.variableCosts += variableCostAllocated;
+      existing.netProfit = existing.revenue - allocatedCosts;
+      existing.marginPercent = existing.revenue > 0 ? existing.netProfit / existing.revenue : 0;
+      existing.refundRate = existing.revenue > 0 ? existing.refunds / existing.revenue : 0;
+      existing.shippingBurden = existing.revenue > 0 ? existing.shipping / existing.revenue : 0;
+      existing.adAdjustedMargin =
+        existing.revenue > 0 ? (existing.netProfit + existing.adSpend) / existing.revenue : 0;
+      existing.status = getProductStatus(existing);
       productMap.set(key, existing);
     }
   }
 
-  const products = Array.from(productMap.values()).sort((a, b) => b.netProfit - a.netProfit);
+  const products = Array.from(productMap.values())
+    .map((product) => {
+      const netProfit =
+        product.revenue -
+        product.discounts -
+        product.refunds -
+        product.cogs -
+        product.shipping -
+        product.fees -
+        product.adSpend -
+        product.variableCosts;
+      const marginPercent = product.revenue > 0 ? netProfit / product.revenue : 0;
+      const refundRate = product.revenue > 0 ? product.refunds / product.revenue : 0;
+      const shippingBurden = product.revenue > 0 ? product.shipping / product.revenue : 0;
+      const adAdjustedMargin = product.revenue > 0 ? (netProfit + product.adSpend) / product.revenue : 0;
+
+      return {
+        ...product,
+        netProfit,
+        marginPercent,
+        refundRate,
+        shippingBurden,
+        adAdjustedMargin,
+        status:
+          marginPercent > CUT_MAX_MARGIN && marginPercent < HEALTHY_MIN_MARGIN
+            ? "Needs Fix"
+            : getProductStatus({ marginPercent, refundRate, shippingBurden, netProfit })
+      };
+    })
+    .sort((a, b) => b.netProfit - a.netProfit);
 
   const leakRows = [
     { label: "Refund Leak", value: typedOrders.reduce((sum, order) => sum + order.refunds, 0) },
@@ -164,7 +246,7 @@ export async function getStoreInsights(storeId: string) {
       targetEntity: product.productTitle,
       summary: `${product.productTitle} is currently losing contribution profit.`,
       why: [
-        `Margin is ${(product.margin * 100).toFixed(1)}%.`,
+        `Margin is ${(product.marginPercent * 100).toFixed(1)}%.`,
         `Estimated monthly drag is $${impact.toFixed(2)}.`
       ],
       estimatedMonthlyImpact: impact,
@@ -200,7 +282,7 @@ export async function getStoreInsights(storeId: string) {
       targetEntity: scaleProduct.productTitle,
       summary: `${scaleProduct.productTitle} is a strong performer with healthy margin.`,
       why: [
-        `Margin is ${(scaleProduct.margin * 100).toFixed(1)}%.`,
+        `Margin is ${(scaleProduct.marginPercent * 100).toFixed(1)}%.`,
         `A 15% volume lift could add $${impact.toFixed(2)}/month.`
       ],
       estimatedMonthlyImpact: impact,
