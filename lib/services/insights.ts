@@ -64,16 +64,26 @@ const HEALTHY_MIN_MARGIN = 0.12;
 const CUT_MAX_MARGIN = 0;
 const SCALE_MAX_REFUND_RATE = 0.05;
 const HIGH_SHIPPING_BURDEN = 0.15;
+const HIGH_DISCOUNT_BURDEN = 0.2;
+const HIGH_REFUND_RATE = 0.08;
 
 export function getProductStatus(product: {
   marginPercent: number;
   refundRate: number;
   shippingBurden: number;
+  discountBurden?: number;
   netProfit: number;
 }): ProductInsight["status"] {
   if (product.marginPercent <= CUT_MAX_MARGIN || product.netProfit <= 0) return "Cut Candidate";
   if (product.marginPercent >= SCALE_MIN_MARGIN && product.refundRate < SCALE_MAX_REFUND_RATE) return "Scale";
-  if (product.marginPercent >= HEALTHY_MIN_MARGIN && product.shippingBurden < HIGH_SHIPPING_BURDEN) return "Healthy";
+
+  const discountBurden = product.discountBurden ?? 0;
+  const hasElevatedLeaks =
+    product.shippingBurden >= HIGH_SHIPPING_BURDEN ||
+    discountBurden >= HIGH_DISCOUNT_BURDEN ||
+    product.refundRate >= HIGH_REFUND_RATE;
+
+  if (product.marginPercent >= HEALTHY_MIN_MARGIN && !hasElevatedLeaks) return "Healthy";
   return "Needs Fix";
 }
 
@@ -136,6 +146,7 @@ export async function getStoreInsights(storeId: string) {
   const productMap = new Map<string, ProductInsight>();
   for (const order of typedOrders) {
     const totalItemRevenue = order.items.reduce((sum, item) => sum + item.totalRevenue, 0);
+    const totalItemQuantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
 
     for (const item of order.items) {
       const key = item.productId ?? item.title;
@@ -158,22 +169,18 @@ export async function getStoreInsights(storeId: string) {
         status: "Healthy"
       };
 
-      const share = totalItemRevenue > 0 ? item.totalRevenue / totalItemRevenue : 0;
+      const share =
+        totalItemRevenue > 0
+          ? item.totalRevenue / totalItemRevenue
+          : totalItemQuantity > 0
+            ? item.quantity / totalItemQuantity
+            : 0;
       const discountAllocated = order.discounts * share;
       const refundsAllocated = order.refunds * share;
       const shippingAllocated = order.shippingCost * share;
       const feesAllocated = (order.paymentFees + order.shopifyFees) * share;
       const adSpendAllocated = order.adSpendAllocation * share;
       const variableCostAllocated = (order.otherCosts + order.appCostAllocation) * share;
-      const allocatedCosts =
-        item.totalCogs +
-        discountAllocated +
-        refundsAllocated +
-        shippingAllocated +
-        feesAllocated +
-        adSpendAllocated +
-        variableCostAllocated;
-
       existing.revenue += item.totalRevenue;
       existing.discounts += discountAllocated;
       existing.refunds += refundsAllocated;
@@ -182,13 +189,6 @@ export async function getStoreInsights(storeId: string) {
       existing.fees += feesAllocated;
       existing.adSpend += adSpendAllocated;
       existing.variableCosts += variableCostAllocated;
-      existing.netProfit = existing.revenue - allocatedCosts;
-      existing.marginPercent = existing.revenue > 0 ? existing.netProfit / existing.revenue : 0;
-      existing.refundRate = existing.revenue > 0 ? existing.refunds / existing.revenue : 0;
-      existing.shippingBurden = existing.revenue > 0 ? existing.shipping / existing.revenue : 0;
-      existing.adAdjustedMargin =
-        existing.revenue > 0 ? (existing.netProfit + existing.adSpend) / existing.revenue : 0;
-      existing.status = getProductStatus(existing);
       productMap.set(key, existing);
     }
   }
@@ -207,6 +207,7 @@ export async function getStoreInsights(storeId: string) {
       const marginPercent = product.revenue > 0 ? netProfit / product.revenue : 0;
       const refundRate = product.revenue > 0 ? product.refunds / product.revenue : 0;
       const shippingBurden = product.revenue > 0 ? product.shipping / product.revenue : 0;
+      const discountBurden = product.revenue > 0 ? product.discounts / product.revenue : 0;
       const adAdjustedMargin = product.revenue > 0 ? (netProfit + product.adSpend) / product.revenue : 0;
 
       return {
@@ -216,10 +217,7 @@ export async function getStoreInsights(storeId: string) {
         refundRate,
         shippingBurden,
         adAdjustedMargin,
-        status:
-          marginPercent > CUT_MAX_MARGIN && marginPercent < HEALTHY_MIN_MARGIN
-            ? "Needs Fix"
-            : getProductStatus({ marginPercent, refundRate, shippingBurden, netProfit })
+        status: getProductStatus({ marginPercent, refundRate, shippingBurden, discountBurden, netProfit })
       };
     })
     .sort((a, b) => b.netProfit - a.netProfit);

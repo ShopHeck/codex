@@ -4,6 +4,7 @@ import { KpiCards } from "@/components/layout/kpi-cards";
 import { Card } from "@/components/ui/card";
 import { getSessionFromCookies } from "@/lib/shopify/session";
 import { getStoreInsights } from "@/lib/services/insights";
+import { formatWaterfallTotal, getNetProfitVisualState } from "@/lib/profit-visuals";
 
 export default async function DashboardPage() {
   const session = await getSessionFromCookies();
@@ -12,15 +13,23 @@ export default async function DashboardPage() {
   }
 
   const data = await getStoreInsights(session.storeId);
+  const netProfitState = getNetProfitVisualState(data.kpis.netProfit);
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Real Profit Dashboard</h1>
       <KpiCards kpis={data.kpis} />
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-3">
         <Card className="p-4">
           <h2 className="mb-3 font-medium">Daily Net Profit</h2>
           <ProfitChart points={data.daily} />
+        </Card>
+        <Card className="space-y-3 p-4">
+          <h2 className="font-medium">Profit Waterfall Total</h2>
+          <p className={`text-2xl font-semibold ${netProfitState === "loss" ? "text-red-600" : netProfitState === "profit" ? "text-emerald-600" : "text-muted-foreground"}`}>
+            {formatWaterfallTotal(data.kpis.netProfit)}
+          </p>
+          <p className="text-sm text-muted-foreground">Net profit after discounts, refunds, shipping, fees, ads, and variable costs.</p>
         </Card>
         <Card className="space-y-3 p-4">
           <h2 className="font-medium">Confidence & Priority Actions</h2>
