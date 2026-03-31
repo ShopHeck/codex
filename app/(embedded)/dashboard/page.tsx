@@ -48,6 +48,40 @@ export default async function DashboardPage() {
           </ul>
         </Card>
       </div>
+      <Card className="p-0">
+        <div className="border-b p-4">
+          <h2 className="font-medium">Top 3 products losing money</h2>
+          <p className="text-sm text-muted-foreground">Focus these first to stop profit drag.</p>
+        </div>
+        <table className="w-full text-sm">
+          <thead className="bg-gray-100">
+            <tr>
+              <th className="p-2 text-left">Product</th>
+              <th className="p-2 text-right">Net profit</th>
+              <th className="p-2 text-right">Margin %</th>
+              <th className="p-2 text-left">Primary reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.topLosingProducts.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="p-3 text-center text-muted-foreground">
+                  No losing products in this period.
+                </td>
+              </tr>
+            ) : (
+              data.topLosingProducts.map((product) => (
+                <tr key={product.productId} className="border-t">
+                  <td className="p-2">{product.productTitle}</td>
+                  <td className="p-2 text-right">${product.netProfit.toFixed(2)}</td>
+                  <td className="p-2 text-right">{(product.marginPercent * 100).toFixed(1)}%</td>
+                  <td className="p-2">{product.primaryReason}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </Card>
     </div>
   );
 }

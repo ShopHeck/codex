@@ -12,6 +12,7 @@ export async function GET() {
     kpis: insights.kpis,
     confidence: insights.confidence,
     daily: insights.daily,
+    topLosingProducts: insights.topLosingProducts,
     costBreakdown: insights.leaks.map((leak) => ({ label: leak.label, value: leak.value })),
     recommendations: insights.recommendations.slice(0, 3)
   });

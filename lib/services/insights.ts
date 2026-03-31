@@ -55,6 +55,14 @@ export type Recommendation = {
   actionCta: string;
 };
 
+export type LosingProductInsight = {
+  productId: string;
+  productTitle: string;
+  netProfit: number;
+  marginPercent: number;
+  primaryReason: string;
+};
+
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
@@ -66,6 +74,30 @@ const SCALE_MAX_REFUND_RATE = 0.05;
 const HIGH_SHIPPING_BURDEN = 0.15;
 const HIGH_DISCOUNT_BURDEN = 0.2;
 const HIGH_REFUND_RATE = 0.08;
+
+function getPrimaryProfitDrag(product: {
+  netProfit: number;
+  shippingBurden: number;
+  refundRate: number;
+  discounts: number;
+  fees: number;
+  adSpend: number;
+  revenue: number;
+}) {
+  if (product.netProfit >= 0) return "Not losing money";
+
+  const feeBurden = product.revenue > 0 ? product.fees / product.revenue : 0;
+  const adBurden = product.revenue > 0 ? product.adSpend / product.revenue : 0;
+  const discountBurden = product.revenue > 0 ? product.discounts / product.revenue : 0;
+
+  return [
+    { label: "High shipping cost burden", value: product.shippingBurden },
+    { label: "High refund rate", value: product.refundRate },
+    { label: "Heavy discounting", value: discountBurden },
+    { label: "Platform/payment fees", value: feeBurden },
+    { label: "Ad spend outweighing contribution", value: adBurden }
+  ].sort((a, b) => b.value - a.value)[0]?.label;
+}
 
 export function getProductStatus(product: {
   marginPercent: number;
@@ -222,6 +254,8 @@ export async function getStoreInsights(storeId: string) {
     })
     .sort((a, b) => b.netProfit - a.netProfit);
 
+  const monthlyFactor = getMonthlyFactor(typedOrders);
+
   const leakRows = [
     { label: "Refund Leak", value: typedOrders.reduce((sum, order) => sum + order.refunds, 0) },
     { label: "Shipping Leak", value: typedOrders.reduce((sum, order) => sum + order.shippingCost, 0) },
@@ -231,9 +265,11 @@ export async function getStoreInsights(storeId: string) {
       value: typedOrders.reduce((sum, order) => sum + order.paymentFees + order.shopifyFees, 0)
     },
     { label: "Ad Leak", value: typedOrders.reduce((sum, order) => sum + order.adSpendAllocation, 0) }
-  ].map((row) => ({ ...row, ratio: revenue > 0 ? row.value / revenue : 0 }));
+  ].map((row) => {
+    const ratio = revenue > 0 ? row.value / revenue : 0;
+    return { ...row, ratio, projectedImpact: row.value * 0.2 * monthlyFactor };
+  });
 
-  const monthlyFactor = getMonthlyFactor(typedOrders);
   const recommendations: Recommendation[] = [];
 
   for (const product of products.filter((product) => product.status === "Cut Candidate").slice(0, 2)) {
@@ -289,6 +325,18 @@ export async function getStoreInsights(storeId: string) {
     });
   }
 
+  const topLosingProducts: LosingProductInsight[] = products
+    .filter((product) => product.netProfit < 0)
+    .sort((a, b) => a.netProfit - b.netProfit)
+    .slice(0, 3)
+    .map((product) => ({
+      productId: product.productId,
+      productTitle: product.productTitle,
+      netProfit: product.netProfit,
+      marginPercent: product.marginPercent,
+      primaryReason: getPrimaryProfitDrag(product) ?? "Combined cost pressure"
+    }));
+
   return {
     kpis: {
       revenue,
@@ -307,6 +355,7 @@ export async function getStoreInsights(storeId: string) {
       netProfit: snapshot.netProfit
     })),
     products,
+    topLosingProducts,
     leaks: leakRows,
     recommendations: recommendations
       .filter((recommendation) => recommendation.estimatedMonthlyImpact > 0)

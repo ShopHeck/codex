@@ -19,6 +19,7 @@ export default async function LeaksPage() {
               <th className="p-2 text-left">Leak</th>
               <th className="p-2 text-right">Amount</th>
               <th className="p-2 text-right">% of Revenue</th>
+              <th className="p-2 text-right">Projected Impact</th>
             </tr>
           </thead>
           <tbody>
@@ -27,6 +28,7 @@ export default async function LeaksPage() {
                 <td className="p-2">{leak.label}</td>
                 <td className="p-2 text-right">${leak.value.toFixed(2)}</td>
                 <td className="p-2 text-right">{(leak.ratio * 100).toFixed(1)}%</td>
+                <td className="p-2 text-right">${leak.projectedImpact.toFixed(2)}</td>
               </tr>
             ))}
           </tbody>
