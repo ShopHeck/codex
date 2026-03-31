@@ -21,9 +21,11 @@ export default async function ProductsPage() {
             <tr>
               <th className="p-2 text-left">Product</th>
               <th className="p-2 text-right">Revenue</th>
-              <th className="p-2 text-right">Costs</th>
               <th className="p-2 text-right">Net Profit</th>
-              <th className="p-2 text-right">Margin</th>
+              <th className="p-2 text-right">Margin %</th>
+              <th className="p-2 text-right">Refund Rate</th>
+              <th className="p-2 text-right">Shipping Burden</th>
+              <th className="p-2 text-right">Ad-adjusted Margin</th>
               <th className="p-2 text-right">Status</th>
             </tr>
           </thead>
@@ -32,9 +34,11 @@ export default async function ProductsPage() {
               <tr key={product.productId} className="border-t">
                 <td className="p-2">{product.productTitle}</td>
                 <td className="p-2 text-right">${product.revenue.toFixed(2)}</td>
-                <td className="p-2 text-right">${product.totalCosts.toFixed(2)}</td>
                 <td className="p-2 text-right">${product.netProfit.toFixed(2)}</td>
-                <td className="p-2 text-right">{(product.margin * 100).toFixed(1)}%</td>
+                <td className="p-2 text-right">{(product.marginPercent * 100).toFixed(1)}%</td>
+                <td className="p-2 text-right">{(product.refundRate * 100).toFixed(1)}%</td>
+                <td className="p-2 text-right">{(product.shippingBurden * 100).toFixed(1)}%</td>
+                <td className="p-2 text-right">{(product.adAdjustedMargin * 100).toFixed(1)}%</td>
                 <td className="p-2 text-right">{product.status}</td>
               </tr>
             ))}
