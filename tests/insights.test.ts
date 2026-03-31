@@ -14,6 +14,12 @@ describe("product status rules", () => {
     );
   });
 
+  it("marks elevated leak profile as needs fix even when margin is healthy", () => {
+    expect(
+      getProductStatus({ marginPercent: 0.18, refundRate: 0.02, shippingBurden: 0.16, discountBurden: 0.1, netProfit: 18 })
+    ).toBe("Needs Fix");
+  });
+
   it("marks strong margin as scale", () => {
     expect(getProductStatus({ marginPercent: 0.3, refundRate: 0.01, shippingBurden: 0.05, netProfit: 30 })).toBe(
       "Scale"
@@ -21,8 +27,8 @@ describe("product status rules", () => {
   });
 
   it("marks middle margin as healthy", () => {
-    expect(getProductStatus({ marginPercent: 0.2, refundRate: 0.01, shippingBurden: 0.1, netProfit: 20 })).toBe(
-      "Healthy"
-    );
+    expect(
+      getProductStatus({ marginPercent: 0.2, refundRate: 0.01, shippingBurden: 0.1, discountBurden: 0.05, netProfit: 20 })
+    ).toBe("Healthy");
   });
 });
