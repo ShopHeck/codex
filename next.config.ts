@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const isGitHubPagesBuild = process.env.NEXT_EXPORT_GH_PAGES === "true";
-const gitHubPagesBasePath = process.env.NEXT_EXPORT_BASE_PATH ?? "/codex";
+const gitHubPagesBasePath = process.env.NEXT_EXPORT_BASE_PATH || "";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -10,7 +10,7 @@ const nextConfig: NextConfig = {
     ? {
         output: "export",
         basePath: gitHubPagesBasePath,
-        assetPrefix: `${gitHubPagesBasePath}/`,
+        assetPrefix: gitHubPagesBasePath ? `${gitHubPagesBasePath}/` : "/",
         trailingSlash: true,
         images: {
           unoptimized: true,

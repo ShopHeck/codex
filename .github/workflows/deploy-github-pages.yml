@@ -9,6 +9,9 @@ on:
 permissions:
   contents: write
 
+env:
+  PAGES_BASE_PATH: "/codex"
+
 concurrency:
   group: "pages"
   cancel-in-progress: true
@@ -28,38 +31,39 @@ jobs:
 
       - name: Prepare static Pages build workspace
         run: |
-          rm -rf /tmp/codex-pages-build
-          cp -R . /tmp/codex-pages-build
-          rm -rf /tmp/codex-pages-build/.git
-          rm -rf /tmp/codex-pages-build/node_modules
+          WORKDIR="$(mktemp -d "${RUNNER_TEMP:-/tmp}/codex-pages-build-XXXXXX")"
+          echo "WORKDIR=$WORKDIR" >> "$GITHUB_ENV"
+          cp -R . "$WORKDIR"
+          rm -rf "$WORKDIR/.git"
+          rm -rf "$WORKDIR/node_modules"
           # GitHub Pages can only host static assets, so remove server-only routes before export.
           EXCLUDE_DIRS=(
-            "/tmp/codex-pages-build/app/api"
-            "/tmp/codex-pages-build/app/(embedded)"
+            "$WORKDIR/app/api"
+            "$WORKDIR/app/(embedded)"
           )
           for dir in "${EXCLUDE_DIRS[@]}"; do
             [ -d "$dir" ] && rm -rf "$dir"
           done
 
       - name: Install dependencies
-        working-directory: /tmp/codex-pages-build
+        working-directory: ${{ env.WORKDIR }}
         run: npm install
 
       - name: Build static export
-        working-directory: /tmp/codex-pages-build
+        working-directory: ${{ env.WORKDIR }}
         env:
           NEXT_TELEMETRY_DISABLED: 1
           NEXT_EXPORT_GH_PAGES: "true"
-          NEXT_EXPORT_BASE_PATH: "/codex"
+          NEXT_EXPORT_BASE_PATH: ${{ env.PAGES_BASE_PATH }}
         run: npm run build
 
       - name: Add .nojekyll
-        run: touch /tmp/codex-pages-build/out/.nojekyll
+        run: touch "${{ env.WORKDIR }}/out/.nojekyll"
 
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_branch: gh-pages
-          publish_dir: /tmp/codex-pages-build/out
+          publish_dir: ${{ env.WORKDIR }}/out
           force_orphan: true
