@@ -33,8 +33,13 @@ jobs:
           rm -rf /tmp/codex-pages-build/.git
           rm -rf /tmp/codex-pages-build/node_modules
           # GitHub Pages can only host static assets, so remove server-only routes before export.
-          [ -d /tmp/codex-pages-build/app/api ] && rm -rf /tmp/codex-pages-build/app/api
-          [ -d '/tmp/codex-pages-build/app/(embedded)' ] && rm -rf '/tmp/codex-pages-build/app/(embedded)'
+          EXCLUDE_DIRS=(
+            "/tmp/codex-pages-build/app/api"
+            "/tmp/codex-pages-build/app/(embedded)"
+          )
+          for dir in "${EXCLUDE_DIRS[@]}"; do
+            [ -d "$dir" ] && rm -rf "$dir"
+          done
 
       - name: Install dependencies
         working-directory: /tmp/codex-pages-build
@@ -45,6 +50,7 @@ jobs:
         env:
           NEXT_TELEMETRY_DISABLED: 1
           NEXT_EXPORT_GH_PAGES: "true"
+          NEXT_EXPORT_BASE_PATH: "/codex"
         run: npm run build
 
       - name: Add .nojekyll
