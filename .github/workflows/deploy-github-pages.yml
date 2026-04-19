@@ -31,7 +31,7 @@ jobs:
 
       - name: Prepare static Pages build workspace
         run: |
-          WORKDIR="$(mktemp -d "${RUNNER_TEMP:-/tmp}/codex-pages-build-XXXXXX")"
+          WORKDIR="$(mktemp -d "${RUNNER_TEMP:-/tmp}/pages-build-XXXXXX")"
           echo "WORKDIR=$WORKDIR" >> "$GITHUB_ENV"
           cp -R . "$WORKDIR"
           rm -rf "$WORKDIR/.git"

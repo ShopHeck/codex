@@ -10,7 +10,7 @@ const nextConfig: NextConfig = {
     ? {
         output: "export",
         basePath: gitHubPagesBasePath,
-        assetPrefix: gitHubPagesBasePath ? `${gitHubPagesBasePath}/` : "/",
+        assetPrefix: gitHubPagesBasePath || "/",
         trailingSlash: true,
         images: {
           unoptimized: true,
