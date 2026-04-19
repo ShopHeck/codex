@@ -26,28 +26,34 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Prepare static Pages build workspace
+        run: |
+          rm -rf /tmp/codex-pages-build
+          cp -R . /tmp/codex-pages-build
+          rm -rf /tmp/codex-pages-build/.git
+          rm -rf /tmp/codex-pages-build/node_modules
+          # GitHub Pages can only host static assets, so remove server-only routes before export.
+          [ -d /tmp/codex-pages-build/app/api ] && rm -rf /tmp/codex-pages-build/app/api
+          [ -d '/tmp/codex-pages-build/app/(embedded)' ] && rm -rf '/tmp/codex-pages-build/app/(embedded)'
+
       - name: Install dependencies
+        working-directory: /tmp/codex-pages-build
         run: npm install
 
-      - name: Prepare static Pages build
-        run: |
-          # GitHub Pages can only host static assets, so remove server-only routes before export.
-          [ -d app/api ] && rm -rf app/api
-          [ -d 'app/(embedded)' ] && rm -rf 'app/(embedded)'
-
       - name: Build static export
+        working-directory: /tmp/codex-pages-build
         env:
           NEXT_TELEMETRY_DISABLED: 1
           NEXT_EXPORT_GH_PAGES: "true"
         run: npm run build
 
       - name: Add .nojekyll
-        run: touch out/.nojekyll
+        run: touch /tmp/codex-pages-build/out/.nojekyll
 
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_branch: gh-pages
-          publish_dir: ./out
+          publish_dir: /tmp/codex-pages-build/out
           force_orphan: true
