@@ -31,8 +31,9 @@ jobs:
 
       - name: Prepare static Pages build
         run: |
-          rm -rf app/api
-          rm -rf 'app/(embedded)'
+          # GitHub Pages can only host static assets, so remove server-only routes before export.
+          [ -d app/api ] && rm -rf app/api
+          [ -d 'app/(embedded)' ] && rm -rf 'app/(embedded)'
 
       - name: Build static export
         env:
