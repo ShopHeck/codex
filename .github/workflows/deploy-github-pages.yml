@@ -1,0 +1,69 @@
+name: Deploy Next.js site to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  PAGES_BASE_PATH: "/codex"
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Prepare static Pages build workspace
+        run: |
+          WORKDIR="$(mktemp -d "${RUNNER_TEMP:-/tmp}/pages-build-XXXXXX")"
+          echo "WORKDIR=$WORKDIR" >> "$GITHUB_ENV"
+          cp -R . "$WORKDIR"
+          rm -rf "$WORKDIR/.git"
+          rm -rf "$WORKDIR/node_modules"
+          # GitHub Pages can only host static assets, so remove server-only routes before export.
+          EXCLUDE_DIRS=(
+            "$WORKDIR/app/api"
+            "$WORKDIR/app/(embedded)"
+          )
+          for dir in "${EXCLUDE_DIRS[@]}"; do
+            [ -d "$dir" ] && rm -rf "$dir"
+          done
+
+      - name: Install dependencies
+        working-directory: ${{ env.WORKDIR }}
+        run: npm install
+
+      - name: Build static export
+        working-directory: ${{ env.WORKDIR }}
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+          NEXT_EXPORT_GH_PAGES: "true"
+          NEXT_EXPORT_BASE_PATH: ${{ env.PAGES_BASE_PATH }}
+        run: npm run build
+
+      - name: Add .nojekyll
+        run: touch "${{ env.WORKDIR }}/out/.nojekyll"
+
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ${{ env.WORKDIR }}/out
+          force_orphan: true
